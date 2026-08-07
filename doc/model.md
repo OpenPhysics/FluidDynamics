@@ -51,17 +51,25 @@ Jos Stam's *Stable Fluids* operator splitting, one pass per term, all in WGSL
 compute shaders. Each frame advances the velocity field through:
 
 1. **Advection** — (u·∇)u, by semi-Lagrangian backtrace with bilinear
-   interpolation. Unconditionally stable at any timestep.
+   interpolation, followed by a MacCormack predictor–corrector that cancels most
+   of the backtrace's numerical diffusion. A bound-preserving limiter keeps the
+   corrected value inside the predictor's local range, so the step is unconditionally
+   stable at any timestep and no more dissipative than the scheme it replaces.
 2. **Diffusion** — ν∇²u, solved implicitly: (I − νΔt∇²)u = u₀, by 12 Jacobi
    sweeps. Implicit because the explicit stability limit Δt < h²/4ν is far below
-   one frame at the high-viscosity end of the range.
+   one frame at the high-viscosity end of the range. The loop is skipped when
+   α = νΔt/h² collapses to zero (the paused path), where every sweep is the
+   identity and only the seeding dispatch is needed.
 3. **Vorticity confinement** — a correction, not a physical term. See below.
 4. **Forcing and boundaries** — inflow, outflow, walls, and the learner's
    pointer.
-5. **Projection** — ∇·u is computed, ∇²p = ∇·u is solved by 30 Jacobi sweeps
-   (50 with the higher-accuracy preference), and ∇p is subtracted. By the
-   Helmholtz–Hodge decomposition this leaves the divergence-free part of the
-   field, which is what incompressibility means.
+5. **Projection** — ∇·u is computed, ∇²p = ∇·u is solved by red-black successive
+   over-relaxation (30 alternating red/black sweeps, 50 with the higher-accuracy
+   preference), and ∇p is subtracted. By the Helmholtz–Hodge decomposition this
+   leaves the divergence-free part of the field, which is what incompressibility
+   means. Red-black ordering runs Gauss–Seidel in parallel, and over-relaxation
+   (ω = 1.7) squares the per-sweep error reduction, so the same dispatch budget
+   leaves far less residual divergence than the Jacobi solve it replaced.
 
 The dye is then injected at the inflow and advected by the finished velocity
 field.
@@ -95,19 +103,22 @@ regimes, which are genuinely two-dimensional phenomena, are faithful.
 
 **The displayed Reynolds number is nominal.** Re = *UD*/ν is computed from the
 values the learner set. The *effective* Reynolds number is lower, because
-semi-Lagrangian advection is itself dissipative — it behaves like an extra
-viscosity of order *h*|**u**|/2, which at the default grid is comparable to the
-physical viscosity in the middle of its range. The regime boundaries in
-`FlowRegime.ts` are the classical values for a circular cylinder (Re ≈ 5, 47 and
-200), and the solver was tuned to reproduce the matching *behaviour* at those
-nominal numbers rather than the labels being moved to fit the solver.
+advection is itself dissipative — even with the MacCormack corrector a residual
+dissipation of order *h*|**u**|/2 remains, though an order of magnitude smaller
+than plain semi-Lagrangian would leave. At the default grid it is still
+comparable to the physical viscosity in the middle of its range. The regime
+boundaries in `FlowRegime.ts` are the classical values for a circular cylinder
+(Re ≈ 5, 47 and 200), and the solver was tuned to reproduce the matching
+*behaviour* at those nominal numbers rather than the labels being moved to fit
+the solver.
 
-**Vorticity confinement is not physics.** Semi-Lagrangian advection damps the
-smallest resolved eddies within a few steps — exactly the scale of the vortices
-being shed. Confinement (Fedkiw, Stam & Jensen 2001) adds a force along the
-gradient of |ω| that pushes rotation back toward its concentrations, restoring
-what the numerics removed. It adds energy to the flow, so it is a visual-fidelity
-knob, not a term in Navier–Stokes.
+**Vorticity confinement is not physics.** Advection still damps the smallest
+resolved eddies within a few steps — exactly the scale of the vortices being
+shed, and the MacCormack corrector reduces but does not eliminate that damping.
+Confinement (Fedkiw, Stam & Jensen 2001) adds a force along the gradient of |ω|
+that pushes rotation back toward its concentrations, restoring what the numerics
+removed. It adds energy to the flow, so it is a visual-fidelity knob, not a term
+in Navier–Stokes.
 
 Its strength is scaled by *h*|**u**|/2 ÷ (*h*|**u**|/2 + ν), the fraction of the
 total damping that is numerical. This matters: at full strength it destabilises
@@ -127,13 +138,17 @@ that nothing damps once the viscosity is small enough; it appears as speckle on
 the obstacle's surface. The viscosity slider's floor (3×10⁻⁴ m²/s) is set to keep
 it out of the picture. A staggered (MAC) grid would remove it properly.
 
-**The Jacobi solves do not converge.** Thirty sweeps leave real residual
-divergence. It is far below what is visible in the dye, which is the standard the
-simulation is held to.
+**The pressure solve does not fully converge.** Red-black SOR with ω = 1.7 and a
+warm start from the previous frame's pressure drives the residual down fast, but
+thirty sweeps still leave some residual divergence. It is far below what is
+visible in the dye, which is the standard the simulation is held to.
 
 ## References
 
 - Stam, J. (1999). *Stable Fluids.* SIGGRAPH '99, 121–128.
+- Selle, A., Fedkiw, R., Kim, B., Liu, Y. & Rossignac, J. (2008). *An
+  Unconditionally Stable MacCormack Method.* Journal of Scientific Computing 35,
+  350–371. (The velocity advection corrector.)
 - Fedkiw, R., Stam, J. & Jensen, H. W. (2001). *Visual Simulation of Smoke.*
   SIGGRAPH '01, 15–22. (Vorticity confinement.)
 - Williamson, C. H. K. (1996). *Vortex dynamics in the cylinder wake.*

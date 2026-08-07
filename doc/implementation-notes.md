@@ -116,6 +116,19 @@ texture views, so **every parity combination a frame can reach is built once at
 construction** — allocating bind groups inside the frame loop is the classic way
 to make a WebGPU renderer allocate sixty times a second.
 
+Velocity advection is a MacCormack predictor–corrector, so it keeps a third
+velocity-sized scratch texture (`advectTemp`) for the predictor's φ_A: the
+backward trace writes it, the corrector reads it and writes the limited result
+into the diffusion source. It is one allocation reused for the life of the grid.
+The dye stays on the plain backward trace — it is carried by the sharpened
+velocity and needs no scratch of its own.
+
+The pressure solve is red-black SOR. Each sweep reads one pressure texture and
+writes the other; the cells of the opposite colour are copied through verbatim,
+so a red sweep followed by a black sweep ping-pongs back to the original texture
+with the whole grid updated. The host alternates red and black, one dispatch
+each, so the per-frame dispatch count is unchanged from the old Jacobi loop.
+
 Texture formats are chosen around filtering: velocity and dye are `rgba16float`
 because semi-Lagrangian advection wants hardware bilinear interpolation and
 `rgba16float` is both filterable and storage-capable in core WebGPU. `rg32float`

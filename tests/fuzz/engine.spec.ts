@@ -101,8 +101,9 @@ async function render(page: Page, format: string, steps: number, overrides: Reco
 
 test.describe("WebGPU fluid engine", () => {
   // The solver runs hundreds of steps per case; the default 30 s is not enough
-  // on a software rasterizer.
-  test.setTimeout(180_000);
+  // on a software rasterizer. The MacCormack velocity corrector adds a dispatch
+  // per frame, so this is budgeted generously rather than tuned to the wire.
+  test.setTimeout(360_000);
 
   test("dye is carried downstream and around a cylinder", async ({ page }) => {
     const format = await startEngine(page);

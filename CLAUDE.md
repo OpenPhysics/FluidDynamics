@@ -132,7 +132,7 @@ npm run lint && npm run check && npm run build && npm test
 
 | Parameter | Purpose |
 |---|---|
-| `highQualitySolver` | Public. Initial value of the Preferences → Simulation toggle (50 vs 30 Jacobi sweeps). |
+| `highQualitySolver` | Public. Initial value of the Preferences → Simulation toggle (50 vs 30 red-black SOR pressure sweeps). |
 | `pressureIterations` | Development only. Overrides both the default and the preference; `0` means "use the preference". |
 
 ## PWA

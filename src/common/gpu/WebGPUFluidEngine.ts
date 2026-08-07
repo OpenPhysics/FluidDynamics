@@ -9,9 +9,10 @@
  * into, which FluidFieldNode blits into Scenery.
  *
  * ── One frame ─────────────────────────────────────────────────────────────────
- *   advect velocity → diffuse (viscosity) → curl → vorticity confinement
- *   → forces & boundaries → divergence → pressure (Jacobi ×N)
- *   → subtract pressure gradient → inject dye → advect dye → display
+ *   advect velocity (MacCormack: predict → correct) → diffuse (viscosity)
+ *   → curl → vorticity confinement → forces & boundaries → divergence
+ *   → pressure (red-black SOR ×N) → subtract pressure gradient
+ *   → inject dye → advect dye → display
  *
  * Every compute dispatch above is recorded into a single compute pass on a
  * single command encoder, with one queue submission per frame.
@@ -35,6 +36,7 @@ import {
   CHANNEL_HEIGHT_M,
   CHANNEL_WIDTH_M,
   DIFFUSION_ITERATIONS,
+  DIFFUSION_SKIP_ALPHA,
   DISPLAY_CANVAS_HEIGHT,
   DISPLAY_CANVAS_WIDTH,
 } from "../../FluidDynamicsConstants.js";
@@ -124,6 +126,13 @@ export class WebGPUFluidEngine {
   private pressure!: PingPong;
   private velocitySource!: GPUTexture;
   private velocitySourceView!: GPUTextureView;
+  /**
+   * Scratch texture holding the predictor (φ_A) of the MacCormack velocity
+   * advection. Written by the backward trace, read by the corrector, then dead
+   * until next frame — one allocation reused for the life of the grid.
+   */
+  private advectTemp!: GPUTexture;
+  private advectTempView!: GPUTextureView;
   private divergence!: GPUTexture;
   private divergenceView!: GPUTextureView;
   private curl!: GPUTexture;
@@ -253,7 +262,12 @@ export class WebGPUFluidEngine {
     );
 
     const encoder = this.device.createCommandEncoder({ label: "fluid-frame" });
-    this.recordCompute(encoder, values.pressureIterations);
+    // α = νΔt/h² is the diffusion solve's stiffness. Below DIFFUSION_SKIP_ALPHA
+    // the sweep is numerically the identity, so only the seeding dispatch runs.
+    // See the constant's doc for why this is effectively a paused-path guard.
+    const h = this.grid.cellSize;
+    const diffuseAlpha = (values.viscosity * dt) / (h * h);
+    this.recordCompute(encoder, values.pressureIterations, diffuseAlpha >= DIFFUSION_SKIP_ALPHA);
     this.recordDisplay(encoder);
     if (this.presentToCanvas) {
       encoder.copyTextureToTexture({ texture: this.displayTexture }, { texture: this.context.getCurrentTexture() }, [
@@ -340,7 +354,7 @@ export class WebGPUFluidEngine {
 
   // ── Frame recording ─────────────────────────────────────────────────────────
 
-  private recordCompute(encoder: GPUCommandEncoder, pressureIterations: number): void {
+  private recordCompute(encoder: GPUCommandEncoder, pressureIterations: number, runDiffusion: boolean): void {
     const pass = encoder.beginComputePass({ label: "fluid-solver" });
     const x = this.grid.dispatchX;
     const y = this.grid.dispatchY;
@@ -352,17 +366,22 @@ export class WebGPUFluidEngine {
       pass.dispatchWorkgroups(x, y);
     };
 
-    // 1. Advect velocity by itself, into the diffusion solve's fixed source.
+    // 1. Advect velocity: backward trace into the MacCormack scratch texture
+    //    (φ_A), then the corrector writes the limited, anti-diffused velocity
+    //    into velocitySource, which the diffusion solve reads from.
     dispatch(this.pipelines.advectVelocity, bg.advectVelocity[this.velocity.parity]);
+    dispatch(this.pipelines.advectVelocityCorrect, bg.advectVelocityCorrect[this.velocity.parity]);
 
-    // 2. Viscous diffusion. The first sweep seeds the iterate from the source;
-    //    the rest ping-pong. Always run, even at low viscosity, where the
-    //    iteration is very close to the identity.
+    // 2. Viscous diffusion. The first sweep seeds the iterate from the advected
+    //    source; the rest ping-pong. Skipped near the identity (α ≈ 0), where
+    //    the seeding sweep alone already holds the unchanged field.
     dispatch(this.pipelines.diffuse, bg.diffuseSeed);
     this.velocity.parity = 0;
-    for (let i = 1; i < DIFFUSION_ITERATIONS; i++) {
-      dispatch(this.pipelines.diffuse, bg.diffuse[this.velocity.parity]);
-      this.velocity.swap();
+    if (runDiffusion) {
+      for (let i = 1; i < DIFFUSION_ITERATIONS; i++) {
+        dispatch(this.pipelines.diffuse, bg.diffuse[this.velocity.parity]);
+        this.velocity.swap();
+      }
     }
 
     // 3-4. Restore the small-scale vorticity advection dissipated.
@@ -374,10 +393,15 @@ export class WebGPUFluidEngine {
     dispatch(this.pipelines.forces, bg.forces[this.velocity.parity]);
     this.velocity.swap();
 
-    // 6-8. Projection: make the velocity field divergence-free.
+    // 6-8. Projection: make the velocity field divergence-free. Red-black SOR
+    //      alternates one red and one black sweep per step, so the dispatch
+    //      count equals pressureIterations while each pair is a full GS iterate.
     dispatch(this.pipelines.divergence, bg.divergence[this.velocity.parity]);
     for (let i = 0; i < pressureIterations; i++) {
-      dispatch(this.pipelines.pressure, bg.pressure[this.pressure.parity]);
+      dispatch(
+        i % 2 === 0 ? this.pipelines.pressureRed : this.pipelines.pressureBlack,
+        bg.pressure[this.pressure.parity],
+      );
       this.pressure.swap();
     }
     dispatch(this.pipelines.gradientSubtract, bg.gradientSubtract[this.velocity.parity][this.pressure.parity]);
@@ -430,6 +454,14 @@ export class WebGPUFluidEngine {
     });
     this.velocitySourceView = this.velocitySource.createView();
 
+    this.advectTemp = device.createTexture({
+      label: "advect-temp",
+      size: [grid.width, grid.height],
+      format: VELOCITY_FORMAT,
+      usage: storageAndSample,
+    });
+    this.advectTempView = this.advectTemp.createView();
+
     this.divergence = device.createTexture({
       label: "divergence",
       size: [grid.width, grid.height],
@@ -454,6 +486,7 @@ export class WebGPUFluidEngine {
     this.dye.destroy();
     this.pressure.destroy();
     this.velocitySource.destroy();
+    this.advectTemp.destroy();
     this.divergence.destroy();
     this.curl.destroy();
   }
@@ -475,13 +508,26 @@ export class WebGPUFluidEngine {
     const perParity = <T>(build: (parity: 0 | 1) => T): [T, T] => [build(0), build(1)];
 
     return {
-      // Advects velocity by itself into velocitySource.
+      // Predicts φ_A: backward-advects velocity by itself into the scratch texture.
       advectVelocity: perParity((p) =>
         group(layouts.advect, [
           uniform,
           sampler,
           { binding: 2, resource: velocityViews[p] },
           { binding: 3, resource: velocityViews[p] },
+          { binding: 4, resource: this.advectTempView },
+        ]),
+      ),
+
+      // MacCormack corrector: reads φ^n + the trace velocity from velocity, φ_A
+      // from the scratch texture, and writes the corrected velocity to the
+      // diffusion source. velocityTex and sourceTex share the advect layout.
+      advectVelocityCorrect: perParity((p) =>
+        group(layouts.advect, [
+          uniform,
+          sampler,
+          { binding: 2, resource: velocityViews[p] },
+          { binding: 3, resource: this.advectTempView },
           { binding: 4, resource: this.velocitySourceView },
         ]),
       ),
@@ -624,13 +670,15 @@ type Layouts = {
 type Pipelines = {
   readonly layouts: Layouts;
   readonly advectVelocity: GPUComputePipeline;
+  readonly advectVelocityCorrect: GPUComputePipeline;
   readonly advectDye: GPUComputePipeline;
   readonly diffuse: GPUComputePipeline;
   readonly curl: GPUComputePipeline;
   readonly vorticity: GPUComputePipeline;
   readonly forces: GPUComputePipeline;
   readonly divergence: GPUComputePipeline;
-  readonly pressure: GPUComputePipeline;
+  readonly pressureRed: GPUComputePipeline;
+  readonly pressureBlack: GPUComputePipeline;
   readonly gradientSubtract: GPUComputePipeline;
   readonly injectDye: GPUComputePipeline;
   readonly display: GPURenderPipeline;
@@ -638,6 +686,7 @@ type Pipelines = {
 
 type BindGroups = {
   readonly advectVelocity: [GPUBindGroup, GPUBindGroup];
+  readonly advectVelocityCorrect: [GPUBindGroup, GPUBindGroup];
   readonly diffuseSeed: GPUBindGroup;
   readonly diffuse: [GPUBindGroup, GPUBindGroup];
   readonly curl: [GPUBindGroup, GPUBindGroup];
@@ -754,6 +803,8 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
 
   const advectModule = module("advect", advectWGSL);
   const advectLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts.advect] });
+  const pressureModule = module("pressure", pressureWGSL);
+  const pressureLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts.twoInScalar] });
 
   const displayModule = module("display", displayWGSL);
 
@@ -763,6 +814,11 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
       label: "advect-velocity",
       layout: advectLayout,
       compute: { module: advectModule, entryPoint: "advectVelocity" },
+    }),
+    advectVelocityCorrect: device.createComputePipeline({
+      label: "advect-velocity-correct",
+      layout: advectLayout,
+      compute: { module: advectModule, entryPoint: "advectVelocityCorrect" },
     }),
     advectDye: device.createComputePipeline({
       label: "advect-dye",
@@ -774,7 +830,16 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
     vorticity: compute("vorticity", layouts.mixedRGBA, vorticityWGSL, "main"),
     forces: compute("forces", layouts.oneInRGBA, forcesWGSL, "main"),
     divergence: compute("divergence", layouts.oneInScalar, divergenceWGSL, "main"),
-    pressure: compute("pressure", layouts.twoInScalar, pressureWGSL, "main"),
+    pressureRed: device.createComputePipeline({
+      label: "pressure-red",
+      layout: pressureLayout,
+      compute: { module: pressureModule, entryPoint: "solveRed" },
+    }),
+    pressureBlack: device.createComputePipeline({
+      label: "pressure-black",
+      layout: pressureLayout,
+      compute: { module: pressureModule, entryPoint: "solveBlack" },
+    }),
     gradientSubtract: compute("gradient-subtract", layouts.mixedRGBA, gradientSubtractWGSL, "main"),
     injectDye: compute("inject-dye", layouts.oneInRGBA, dyeWGSL, "main"),
     display: device.createRenderPipeline({

@@ -33,8 +33,8 @@ See [`doc/model.md`](doc/model.md) for the physics and its limits, and
 
 ## Features
 
-- Stable Fluids solver in WGSL compute shaders (advection, implicit viscous
-  diffusion, vorticity confinement, Jacobi pressure projection)
+- Stable Fluids solver in WGSL compute shaders (MacCormack advection, implicit
+  viscous diffusion, vorticity confinement, red-black SOR pressure projection)
 - Analytic signed-distance obstacles, so the body can be dragged and resized with
   no GPU resource churn
 - Live accessible description of the flow, shared by the field and the screen

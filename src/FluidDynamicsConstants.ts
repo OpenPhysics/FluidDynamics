@@ -112,6 +112,18 @@ export const PRESSURE_ITERATIONS_RANGE = new Range(1, 200);
 /** Jacobi iterations for the implicit viscous diffusion solve. */
 export const DIFFUSION_ITERATIONS = 12;
 
+/**
+ * Below this diffusion coefficient α = νΔt/h², the implicit diffusion sweep is
+ * indistinguishable from the identity (its update is O(α)) and the iteration
+ * loop is skipped, keeping only the single seeding sweep.
+ *
+ * In practice the viscosity floor (3×10⁻⁴ m²/s) keeps α ≈ 0.08 at the standard
+ * grid during normal play, so this guard almost never triggers while running.
+ * It exists for the paused / near-zero-dt path, where α collapses to zero and
+ * the iterations would otherwise do nothing at all.
+ */
+export const DIFFUSION_SKIP_ALPHA = 1e-3;
+
 // ── Time stepping ─────────────────────────────────────────────────────────────
 
 /**
@@ -237,6 +249,7 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   PRESSURE_ITERATIONS_HIGH,
   PRESSURE_ITERATIONS_RANGE,
   DIFFUSION_ITERATIONS,
+  DIFFUSION_SKIP_ALPHA,
   MAX_PHYSICS_DT,
   MAX_SUBSTEPS_PER_FRAME,
   FLOW_SPEED_RANGE,

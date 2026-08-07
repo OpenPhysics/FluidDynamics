@@ -1,12 +1,26 @@
-// pressure.wgsl — one Jacobi sweep of the pressure Poisson equation ∇²p = ∇·u.
+// pressure.wgsl — red-black successive over-relaxation (SOR) of the pressure
+// Poisson equation ∇²p = ∇·u.
 //
-// Step 2 of the projection. Jacobi rather than a multigrid or conjugate-gradient
-// solver because every cell updates from the previous iterate only — perfectly
-// parallel, one dispatch per sweep, no synchronisation inside the grid.
+// Step 2 of the projection. Red-black ordering splits the grid like a
+// checkerboard: the red sweep updates red cells using their black neighbours,
+// the black sweep updates black cells using the freshly updated red ones. That
+// is Gauss–Seidel in parallel form, and it propagates information across the
+// grid roughly twice as far per sweep as Jacobi. Successive over-relaxation
+// then extrapolates each update past the Gauss–Seidel value, which squares the
+// error reduction again — the reason SOR converges in a small fraction of the
+// sweeps Jacobi needs for the same residual.
 //
-// Convergence is slow (error decays roughly as the number of sweeps divided by
-// the grid size), so ~30 sweeps do not fully converge. They do not need to: the
-// residual divergence left behind is far below what is visible in the dye.
+// Each sweep reads one pressure texture and writes the other. The cells of the
+// opposite colour are copied through unchanged, so a red sweep followed by a
+// black sweep leaves the full grid updated and ping-ponged back to the original
+// texture. The host (WebGPUFluidEngine) alternates red and black, one dispatch
+// each, so the per-frame dispatch count is unchanged from the old Jacobi loop
+// while the residual divergence it leaves behind is far smaller.
+//
+// Convergence no longer needs ~30 sweeps to be useful; the warm start from the
+// previous frame's pressure compounds the speed-up. The same caveats as Jacobi
+// apply: this is still a stationary iterative method, and a true multigrid
+// solve would be faster still on the coarser modes.
 //
 // ── Boundary conditions ───────────────────────────────────────────────────────
 // Solid walls and the obstacle get Neumann (∂p/∂n = 0), implemented by
@@ -16,6 +30,12 @@
 //
 // The outflow edge gets Dirichlet (p = 0) so the flow can leave the channel
 // instead of piling up against a closed boundary.
+
+// Over-relaxation factor ω ∈ (1, 2). Above the Gauss–Seidel value of 1, larger
+// ω converges faster but approaches the unstable edge at 2. 1.7 is conservative
+// across every grid resolution the Lab screen offers and stays well clear of the
+// instability that the collocated-grid checkerboard mode could otherwise amplify.
+const PRESSURE_SOR_OMEGA: f32 = 1.7;
 
 @group(0) @binding(0) var<uniform> u : SimUniforms;
 @group(0) @binding(1) var pressureTex : texture_2d<f32>;
@@ -40,8 +60,9 @@ fn pressureAt(neighbour: vec2<i32>, centre: f32) -> f32 {
   return textureLoad(pressureTex, clamped, 0).x;
 }
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+// One sweep of red-black SOR. `redPass` selects which colour is updated this
+// dispatch; the other colour is copied through verbatim.
+fn solveColour(id: vec3<u32>, redPass: bool) {
   let cell = id.xy;
   if (!inGrid(cell, u)) {
     return;
@@ -57,6 +78,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
 
   let centre = textureLoad(pressureTex, c, 0).x;
+
+  let isRed = ((c.x + c.y) & 1) == 0;
+  if (isRed != redPass) {
+    // Not this sweep's colour: carry the previous value through unchanged.
+    textureStore(outTex, cell, vec4<f32>(centre, 0.0, 0.0, 1.0));
+    return;
+  }
+
   let h = cellSize(u);
   let divergence = textureLoad(divergenceTex, c, 0).x;
 
@@ -66,6 +95,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     pressureAt(c - vec2<i32>(0, 1), centre) +
     pressureAt(c + vec2<i32>(0, 1), centre);
 
-  let pressure = (sum - divergence * h * h) * 0.25;
-  textureStore(outTex, cell, vec4<f32>(pressure, 0.0, 0.0, 1.0));
+  // Gauss–Seidel value, then over-relaxation toward it.
+  let gs = (sum - divergence * h * h) * 0.25;
+  let relaxed = centre + PRESSURE_SOR_OMEGA * (gs - centre);
+  textureStore(outTex, cell, vec4<f32>(relaxed, 0.0, 0.0, 1.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn solveRed(@builtin(global_invocation_id) id: vec3<u32>) {
+  solveColour(id, true);
+}
+
+@compute @workgroup_size(8, 8)
+fn solveBlack(@builtin(global_invocation_id) id: vec3<u32>) {
+  solveColour(id, false);
 }
