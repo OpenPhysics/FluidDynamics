@@ -1,5 +1,5 @@
 /**
- * SimScreenView.ts
+ * LabScreenView.ts
  *
  * The top-level view for the simulation screen.
  *
@@ -9,7 +9,7 @@
  *   - Override step(dt) for frame-by-frame animation
  *
  * ── Adding content ────────────────────────────────────────────────────────────
- * 1. Create Node subclasses in separate files (e.g. SimControlPanel.ts)
+ * 1. Create Node subclasses in separate files (e.g. FluidDynamicsControlPanel.ts)
  * 2. Instantiate them here and call this.addChild(...)
  * 3. Link them to model properties:
  *      model.isRunningProperty.link( isRunning => { ... } );
@@ -24,23 +24,23 @@ import { type EmptySelfOptions, optionize } from "scenerystack/phet-core";
 import { Node, Rectangle, Text } from "scenerystack/scenery";
 import { ResetAllButton } from "scenerystack/scenery-phet";
 import { ScreenView, type ScreenViewOptions } from "scenerystack/sim";
-import { FLAT_RESET_ALL_BUTTON_OPTIONS } from "../../common/SimButtonOptions.js";
-import SimColors from "../../SimColors.js";
-import { SCREEN_VIEW_MARGIN } from "../../SimConstants.js";
-import type { SimModel } from "../model/SimModel.js";
-import { SimScreenSummaryContent } from "./SimScreenSummaryContent.js";
+import { FLAT_RESET_ALL_BUTTON_OPTIONS } from "../../common/FluidDynamicsButtonOptions.js";
+import FluidDynamicsColors from "../../FluidDynamicsColors.js";
+import { SCREEN_VIEW_MARGIN } from "../../FluidDynamicsConstants.js";
+import type { LabModel } from "../model/LabModel.js";
+import { LabScreenSummaryContent } from "./LabScreenSummaryContent.js";
 
-export type SimScreenViewOptions = ScreenViewOptions;
+export type LabScreenViewOptions = ScreenViewOptions;
 
-export class SimScreenView extends ScreenView {
-  public constructor(model: SimModel, providedOptions?: SimScreenViewOptions) {
+export class LabScreenView extends ScreenView {
+  public constructor(model: LabModel, providedOptions?: LabScreenViewOptions) {
     // ── Accessibility: screen summary ───────────────────────────────────────────
     // The screen summary is the first thing a screen-reader user encounters. It
     // is registered here, in the ScreenView's super() options, so every sim wires
-    // it the same way. See SimScreenSummaryContent for the four content regions.
-    const options = optionize<SimScreenViewOptions, EmptySelfOptions, ScreenViewOptions>()(
+    // it the same way. See LabScreenSummaryContent for the four content regions.
+    const options = optionize<LabScreenViewOptions, EmptySelfOptions, ScreenViewOptions>()(
       {
-        screenSummaryContent: new SimScreenSummaryContent(model),
+        screenSummaryContent: new LabScreenSummaryContent(model),
       },
       providedOptions,
     );
@@ -50,15 +50,15 @@ export class SimScreenView extends ScreenView {
     // A full-screen rectangle that follows the active color profile.
     // Replace or remove once you add real content.
     const backgroundRect = new Rectangle(0, 0, this.layoutBounds.width, this.layoutBounds.height, {
-      fill: SimColors.backgroundColorProperty,
+      fill: FluidDynamicsColors.backgroundColorProperty,
     });
     this.addChild(backgroundRect);
 
     // ── Placeholder label ─────────────────────────────────────────────────────
     // Replace this with your actual simulation content.
-    const placeholderText = new Text("SceneryStack Template", {
+    const placeholderText = new Text("Lab", {
       font: "bold 36px sans-serif",
-      fill: SimColors.textColorProperty,
+      fill: FluidDynamicsColors.textColorProperty,
       center: this.layoutBounds.center,
     });
     this.addChild(placeholderText);
@@ -71,7 +71,7 @@ export class SimScreenView extends ScreenView {
     // option; a draggable plain Node needs `tagName: "div", focusable: true` too.
     // Example (uncomment and adapt when you add a real control):
     //
-    //   const a11y = StringManager.getInstance().getA11yStrings();
+    //   const a11y = StringManager.getInstance().getLabA11yStrings();
     //   const exampleButton = new RectangularPushButton({
     //     ...FLAT_RECTANGULAR_BUTTON_OPTIONS, // flat appearance, not SceneryStack's default 3-D look
     //     content: someIcon,

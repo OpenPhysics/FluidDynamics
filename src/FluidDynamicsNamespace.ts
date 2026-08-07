@@ -1,5 +1,5 @@
 /**
- * SimNamespace.ts
+ * FluidDynamicsNamespace.ts
  *
  * The SceneryStack Namespace for this simulation. It is used as the first
  * argument to ProfileColorProperty (so color names are scoped to this sim)
@@ -11,6 +11,6 @@
  */
 import { Namespace } from "scenerystack/phet-core";
 
-const SimNamespace = new Namespace("scenerystack-template");
+const FluidDynamicsNamespace = new Namespace("fluid-dynamics");
 
-export default SimNamespace;
+export default FluidDynamicsNamespace;

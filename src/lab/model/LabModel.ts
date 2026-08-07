@@ -1,5 +1,5 @@
 /**
- * SimModel.ts
+ * LabModel.ts
  *
  * The top-level model for the simulation screen.
  *
@@ -21,13 +21,18 @@
  * Property declared here.
  */
 import type { TModel } from "scenerystack/joist";
+import { SharedModel } from "../../common/model/SharedModel.js";
 
-export class SimModel implements TModel {
+export class LabModel implements TModel {
+  /** Shared helpers — rename SharedModel to a domain type when known. */
+  public readonly shared = new SharedModel();
+
   /**
    * Resets all model state to initial values.
    * Called when the user presses the Reset All button.
    */
   public reset(): void {
+    this.shared.reset();
     // TODO: call .reset() on every Property declared in this model
   }
 
