@@ -80,6 +80,8 @@ export class FluidControlPanel extends FluidDynamicsPanel {
     const resolutionLabels: Record<GridResolution, TReadOnlyProperty<string>> = {
       standard: strings.resolutions.standardStringProperty,
       fine: strings.resolutions.fineStringProperty,
+      veryFine: strings.resolutions.veryFineStringProperty,
+      ultraFine: strings.resolutions.ultraFineStringProperty,
     };
     const disposers: (() => void)[] = [];
     const controls: Node[] = [];

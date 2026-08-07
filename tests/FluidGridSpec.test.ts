@@ -13,8 +13,12 @@ import {
   CHANNEL_WIDTH_M,
   GRID_HEIGHT_DEFAULT,
   GRID_HEIGHT_FINE,
+  GRID_HEIGHT_ULTRA_FINE,
+  GRID_HEIGHT_VERY_FINE,
   GRID_WIDTH_DEFAULT,
   GRID_WIDTH_FINE,
+  GRID_WIDTH_ULTRA_FINE,
+  GRID_WIDTH_VERY_FINE,
   WORKGROUP_SIZE,
 } from "../src/FluidDynamicsConstants.js";
 
@@ -25,6 +29,12 @@ describe("FluidGridSpec resolutions", () => {
 
     const fine = FluidGridSpec.forResolution("fine");
     expect([fine.width, fine.height]).toEqual([GRID_WIDTH_FINE, GRID_HEIGHT_FINE]);
+
+    const veryFine = FluidGridSpec.forResolution("veryFine");
+    expect([veryFine.width, veryFine.height]).toEqual([GRID_WIDTH_VERY_FINE, GRID_HEIGHT_VERY_FINE]);
+
+    const ultraFine = FluidGridSpec.forResolution("ultraFine");
+    expect([ultraFine.width, ultraFine.height]).toEqual([GRID_WIDTH_ULTRA_FINE, GRID_HEIGHT_ULTRA_FINE]);
   });
 
   it("keeps cells square at every resolution, so dye is never stretched", () => {

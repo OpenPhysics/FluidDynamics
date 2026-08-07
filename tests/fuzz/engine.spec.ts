@@ -20,8 +20,8 @@
 
 import { expect, type Page, test } from "@playwright/test";
 
-const WIDTH = 1024;
-const HEIGHT = 512;
+const WIDTH = 2048;
+const HEIGHT = 1024;
 
 /** One rendered frame, with pixel access in the field's own orientation. */
 class Frame {

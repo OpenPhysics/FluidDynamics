@@ -71,16 +71,24 @@ export const GRID_HEIGHT_DEFAULT = 128;
 export const GRID_WIDTH_FINE = 512;
 export const GRID_HEIGHT_FINE = 256;
 
+/** Higher still — four times the cell count of fine. */
+export const GRID_WIDTH_VERY_FINE = 1024;
+export const GRID_HEIGHT_VERY_FINE = 512;
+
+/** Highest-resolution grid, selectable on the Lab screen. Four times the cell count of very fine. */
+export const GRID_WIDTH_ULTRA_FINE = 2048;
+export const GRID_HEIGHT_ULTRA_FINE = 1024;
+
 /**
  * Size of the canvas the solver renders into, in device pixels.
  *
- * Four times the standard grid's linear resolution: the display pass samples the
- * dye texture with a linear filter, so upscaling here costs one texture fetch
- * per pixel and removes the blockiness that a grid-sized canvas would show when
- * Scenery scales it up to the field's on-screen size.
+ * Matches the ultra-fine grid's linear resolution: the display pass samples the
+ * dye texture with a linear filter, so upscaling coarser grids costs one texture
+ * fetch per pixel and removes the blockiness that a grid-sized canvas would show
+ * when Scenery scales it up to the field's on-screen size.
  */
-export const DISPLAY_CANVAS_WIDTH = 1024;
-export const DISPLAY_CANVAS_HEIGHT = 512;
+export const DISPLAY_CANVAS_WIDTH = 2048;
+export const DISPLAY_CANVAS_HEIGHT = 1024;
 
 /**
  * Compute shader workgroup edge, in invocations. 8 × 8 = 64 invocations keeps
@@ -218,6 +226,10 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   GRID_HEIGHT_DEFAULT,
   GRID_WIDTH_FINE,
   GRID_HEIGHT_FINE,
+  GRID_WIDTH_VERY_FINE,
+  GRID_HEIGHT_VERY_FINE,
+  GRID_WIDTH_ULTRA_FINE,
+  GRID_HEIGHT_ULTRA_FINE,
   DISPLAY_CANVAS_WIDTH,
   DISPLAY_CANVAS_HEIGHT,
   WORKGROUP_SIZE,

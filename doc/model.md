@@ -23,7 +23,7 @@ group those combine into, which is why it is displayed next to the flow.
 | ν | kinematic viscosity | m²/s | 3×10⁻⁴ – 10⁻¹ |
 | *D* | obstacle diameter | m | 0.05 – 0.35 |
 | *L* × *H* | channel size | m | 2 × 1 |
-| *h* | grid cell size | m | 1/128 (standard), 1/256 (fine) |
+| *h* | grid cell size | m | 1/128 (standard), 1/256 (fine), 1/512 (very fine), 1/1024 (ultra fine) |
 | Re | Reynolds number, *UD*/ν | — | ≈0.08 – 3500 |
 
 Density is not a separate quantity: it is constant, and dividing the momentum
@@ -70,7 +70,8 @@ field.
 
 Cell-centred and collocated — velocity, pressure, dye and vorticity all live at
 the same points. 256 × 128 cells over the 2 m × 1 m channel by default, 512 × 256
-on the Lab screen's fine setting. Cells are square at both resolutions.
+on the Lab screen's fine setting, 1024 × 512 on very fine, and 2048 × 1024 on ultra
+fine. Cells are square at every resolution.
 
 ### Boundary conditions
 

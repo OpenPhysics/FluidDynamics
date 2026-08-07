@@ -14,13 +14,17 @@ import {
   CHANNEL_WIDTH_M,
   GRID_HEIGHT_DEFAULT,
   GRID_HEIGHT_FINE,
+  GRID_HEIGHT_ULTRA_FINE,
+  GRID_HEIGHT_VERY_FINE,
   GRID_WIDTH_DEFAULT,
   GRID_WIDTH_FINE,
+  GRID_WIDTH_ULTRA_FINE,
+  GRID_WIDTH_VERY_FINE,
   WORKGROUP_SIZE,
 } from "../../FluidDynamicsConstants.js";
 
 /** Selectable solver resolutions. `erasableSyntaxOnly` rules out a TS enum. */
-export const GRID_RESOLUTIONS = ["standard", "fine"] as const;
+export const GRID_RESOLUTIONS = ["standard", "fine", "veryFine", "ultraFine"] as const;
 
 export type GridResolution = (typeof GRID_RESOLUTIONS)[number];
 
@@ -42,9 +46,16 @@ export class FluidGridSpec {
 
   /** The grid for a named resolution. */
   public static forResolution(resolution: GridResolution): FluidGridSpec {
-    return resolution === "fine"
-      ? new FluidGridSpec(GRID_WIDTH_FINE, GRID_HEIGHT_FINE)
-      : new FluidGridSpec(GRID_WIDTH_DEFAULT, GRID_HEIGHT_DEFAULT);
+    switch (resolution) {
+      case "ultraFine":
+        return new FluidGridSpec(GRID_WIDTH_ULTRA_FINE, GRID_HEIGHT_ULTRA_FINE);
+      case "veryFine":
+        return new FluidGridSpec(GRID_WIDTH_VERY_FINE, GRID_HEIGHT_VERY_FINE);
+      case "fine":
+        return new FluidGridSpec(GRID_WIDTH_FINE, GRID_HEIGHT_FINE);
+      case "standard":
+        return new FluidGridSpec(GRID_WIDTH_DEFAULT, GRID_HEIGHT_DEFAULT);
+    }
   }
 
   /**

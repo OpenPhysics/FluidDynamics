@@ -65,7 +65,9 @@
   },
   "resolutions": {
     "standard": "Standard",
-    "fine": "Fine"
+    "fine": "Fine",
+    "veryFine": "Very Fine",
+    "ultraFine": "Ultra Fine"
   },
   "regimes": {
     "creeping": "Creeping flow",
