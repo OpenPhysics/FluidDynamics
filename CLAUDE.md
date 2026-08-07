@@ -4,124 +4,112 @@ Sim-specific context for AI assistants. General SceneryStack guidance: [OpenPhys
 
 ## Project
 
-Reusable SceneryStack template (one or N screens) and **canonical accessibility reference** for
-OpenPhysics sims. Prefer `Baton/scripts/create-sim.sh` (or GitHub **Use this template** +
-`npm run rename` + `npm run scaffold-screens`) to fork it. For multi-screen sims, see
-[`doc/multi-screen.md`](doc/multi-screen.md).
+Flow past an obstacle, from laminar streamlines to a Kármán vortex street to a
+turbulent wake. Jos Stam's **Stable Fluids** solver runs entirely in WGSL compute
+shaders on **WebGPU** — there is no CPU fallback, and where WebGPU is unavailable
+the sim shows a message in place of the field.
+
+Physics and its limits: [`doc/model.md`](doc/model.md).
+Architecture and the non-obvious decisions: [`doc/implementation-notes.md`](doc/implementation-notes.md).
+Read both before changing the solver or the Scenery ↔ WebGPU bridge.
 
 ## Key files
 
 | File | Purpose |
 |---|---|
-| `src/FluidDynamicsColors.ts` | All `ProfileColorProperty` instances |
-| `src/FluidDynamicsConstants.ts` | Named numeric constants (layout px, physics SI units) |
-| `src/FluidDynamicsNamespace.ts` | Namespace for color property names |
-| `src/i18n/StringManager.ts` | Singleton localized string accessor |
-| `src/intro/IntroScreen.ts` | Screen wrapper |
-| `src/intro/model/IntroModel.ts` | Simulation state and logic |
-| `src/intro/view/IntroScreenView.ts` | Visual nodes, layout, `screenSummaryContent` + `pdomOrder` |
-| `src/intro/view/IntroScreenSummaryContent.ts` | Accessible screen summary (reference a11y pattern) |
-| `src/intro/view/IntroKeyboardHelpContent.ts` | Keyboard-help dialog content |
-| `src/common/FluidDynamicsPanel.ts` | Pre-themed `Panel` wrapper (uses `FluidDynamicsColors` automatically) |
-| `src/common/FluidDynamicsButtonOptions.ts` | Flat button-appearance option bundles + light-control-surface combo-box options |
-| `src/common/TimeModel.ts` | Composable play/pause + elapsed-time model for animated sims |
-| `scripts/generate-icons.ts` | PNG icons from `public/icons/icon.svg` |
-| `scripts/rename-sim.ts` | Sim-level fork/rename (package id + metadata, Colors, Constants, Panel, ButtonOptions, Preferences) |
-| `scripts/scaffold-screens.ts` | Emit N screen packages + wire main/strings/icons |
+| `src/FluidDynamicsColors.ts` | All `ProfileColorProperty` instances, including the two dye colours |
+| `src/FluidDynamicsConstants.ts` | Every named number: layout px, grid, solver iteration counts, physics ranges in SI |
+| `src/common/model/FluidModel.ts` | All flow parameters + derived Reynolds number and regime |
+| `src/common/model/FlowRegime.ts` | Regime vocabulary and classification |
+| `src/common/gpu/WebGPUFluidEngine.ts` | Textures, pipelines, bind groups, one frame |
+| `src/common/gpu/shaders/common.wgsl` | Uniform struct + obstacle SDF + grid helpers, prepended to every shader |
+| `src/common/gpu/FluidUniforms.ts` | CPU mirror of that struct — **must** stay in step with it |
+| `src/common/view/FluidFieldNode.ts` | The Scenery ↔ WebGPU bridge |
+| `src/common/view/FluidScreenView.ts` | Layout and wiring shared by both screens |
+| `src/common/view/fluidDescription.ts` | Live a11y description, shared by field and screen summaries |
+| `src/intro/`, `src/lab/` | Thin screen wrappers; they differ only in `showFullControls` |
+
+## Things that will bite you
+
+**`CanvasNode` does not own a canvas.** Scenery hands `paintCanvas()` a 2D
+context belonging to its own shared canvas layer. The engine owns a *detached*
+canvas configured with a `"webgpu"` context, and `paintCanvas` blits it with
+`drawImage` — never `putImageData`, which ignores the transform Scenery already
+applied. All GPU work happens in `update()`, called from the ScreenView's
+`step()`; `paintCanvas` only blits, and `update()` must end with
+`invalidatePaint()`.
+
+**The view must not call `model.step()`.** joist already steps the active
+screen's model.
+
+**Uniform layout is unvalidated by WebGPU.** If `FluidUniforms.ts` and the
+`SimUniforms` struct in `common.wgsl` drift apart, every shader reads a shifted
+field and it looks like a physics bug. `tests/FluidUniforms.test.ts` parses the
+WGSL and pins the contract — if you add a uniform, add it in both places and the
+test will tell you if you got it wrong.
+
+**Load shaders with `?raw`, never `fetch()`.** The `inlineSingleFile()` plugin
+requires no runtime file fetches, and the PWA's `globPatterns` does not include
+`.wgsl`.
+
+**WebGPU canvas presentation does not work in headless Chromium under WSL2** —
+the device is lost the moment any canvas is presented, with or without compute.
+Compute and offscreen rendering work fine. `tests/fuzz/engine.spec.ts` therefore
+runs the engine with `presentToCanvas: false` and reads pixels back.
+
+**Vorticity confinement is scaled by how much of the damping is numerical.**
+Removing that scaling makes low-Reynolds-number wakes shed vortices they should
+not. See `shaders/vorticity.wgsl` and `doc/model.md`.
 
 ## Common components
 
-### FluidDynamicsPanel
+Use `FluidDynamicsPanel` for every panel, and the `FLAT_*` option bundles from
+`FluidDynamicsButtonOptions.ts` for every button — SceneryStack's defaults are
+beveled and this sim is flat. Pair combo-box item labels with
+`LIGHT_SURFACE_TEXT_FILL`, not `textColorProperty`.
 
-Every control panel and info box in the sim should use `FluidDynamicsPanel` so that
-default/projector color switching is automatic:
-
-```typescript
-import { FluidDynamicsPanel } from "../../common/FluidDynamicsPanel.js";
-const panel = new FluidDynamicsPanel(content);              // uses FluidDynamicsColors defaults
-const panel = new FluidDynamicsPanel(content, { xMargin: 20 }); // override any PanelOption
-```
-
-### TimeModel
-
-For simulations with animation, compose `TimeModel` into your screen model:
-
-```typescript
-import { TimeModel } from "../../common/TimeModel.js";
-
-export class MyModel implements TModel {
-  public readonly timer = new TimeModel();   // starts paused; pass true to auto-play
-
-  public step(dt: number): void {
-    this.timer.step(dt);
-    // use this.timer.timeProperty.value for physics
-  }
-  public reset(): void { this.timer.reset(); /* … */ }
-}
-```
-
-Wire the view to `TimeControlNode` from `scenerystack/scenery-phet` binding on
-`model.timer.isPlayingProperty`.
-
-### FluidDynamicsButtonOptions
-
-SceneryStack's push/round buttons default to a 3-D/beveled look; every button in the sim
-should be flat instead. Spread these into the relevant options object:
-
-```typescript
-import { FLAT_RESET_ALL_BUTTON_OPTIONS, FLAT_RECTANGULAR_BUTTON_OPTIONS } from "../../common/FluidDynamicsButtonOptions.js";
-
-const resetAllButton = new ResetAllButton({ ...FLAT_RESET_ALL_BUTTON_OPTIONS, listener: () => {...} });
-const exampleButton = new RectangularPushButton({ ...FLAT_RECTANGULAR_BUTTON_OPTIONS, content, listener });
-```
-
-`FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS` spreads into `TimeControlNode`'s `playPauseStepButtonOptions`;
-`TIME_CONTROL_SPEED_RADIO_OPTIONS` fixes `TimeControlNode`'s speed-radio label color, which
-otherwise defaults to black text on the sim's dark default-mode panels. `FLUID_DYNAMICS_COMBO_BOX_OPTIONS`
-themes a `ComboBox`'s button/list chrome to the light control surface below; pair item labels
-with `LIGHT_SURFACE_TEXT_FILL` (not `FluidDynamicsColors.textColorProperty`, which is for panel-fill text).
-
-`FluidDynamicsColors.ts` backs this with a "light control surfaces" section —
-`controlSurfaceColorProperty`, `controlSurfaceDisabledColorProperty`,
-`controlSurfaceTextColorProperty` — identical white/dark-text values in both default and
-projector profiles, so any component that must stay light regardless of theme (combo boxes,
-flat buttons, editable fields) keeps readable contrast automatically.
+`TimeModel` is composed into each screen model (never subclassed) and bound to
+`TimeControlNode` via `isPlayingProperty`.
 
 ## Accessibility
 
-This template is the **canonical accessibility reference** for OpenPhysics sims. It ships with
-the three required layers wired up: PDOM names, a `IntroScreenSummaryContent`, and an explicit
-`pdomOrder` + `IntroKeyboardHelpContent`. A11y strings live under the `a11y` key in each locale
-JSON, exposed via `StringManager.getIntroA11yStrings()`. When building a real sim, make
-`currentDetailsContent` a live `DerivedProperty` over model state and add `accessibleName`s to
-every interactive node. Full convention and checklist: [Baton/ACCESSIBILITY.md](https://github.com/OpenPhysics/Baton/blob/main/ACCESSIBILITY.md).
+A screen-reader user cannot see the dye, so `createFluidDescriptionProperty()`
+builds a live sentence naming the body, speed, Reynolds number and regime, and
+the *same Property* is used as the field's `accessibleParagraph` and as both
+screens' `currentDetailsContent`. Keep it that way — they must not be allowed to
+disagree.
 
-## Compliance carve-outs
+Every control takes its `accessibleName` from the shared `a11y.fluid` string
+group, never a literal. New strings must be added to **all three** locale files;
+`StringManager.ts` enforces key parity at compile time.
 
-A clean fork of this template rarely needs compliance carve-outs — root `FluidDynamicsConstants.ts`,
-`*Colors.ts`, `*Namespace.ts`, standard screen layout, and full a11y wiring pass Baton's
-compliance check out of the box. Document carve-outs in the forked sim's `CLAUDE.md` only when
-you introduce a deliberate deviation (nested constants, hardcoded interaction fills, etc.).
+## Compliance carve-out
+
+**The solver lives under `src/common/gpu/`, not `src/common/model/`.** Fleet
+convention says the view never integrates physics, but there is no CPU-side fluid
+state to model: velocity, pressure and dye exist only as GPU textures, and none
+of it can be stepped without a `GPUDevice`. So the *parameters* are a model
+(`FluidModel`, no scenery and no GPU imports, fully unit-tested) and the solver
+is a view-side renderer, mirroring `Resonance`'s `WebGLParticleRenderer`.
+`FluidFieldNode` is the only file that touches both.
 
 ## Testing
 
-Fleet-standard Vitest layout (keep when forking):
+Fleet-standard Vitest layout under root `tests/`, plus a Playwright suite:
 
 | Path | Purpose |
 |---|---|
-| `vitest.config.ts` | `happy-dom` environment; `setupFiles: ["./tests/setup.ts"]`; `execArgv: ["--expose-gc"]` |
-| `tests/setup.ts` | Canvas / AudioContext mocks + `init({ name: "…" })` before SceneryStack imports |
-| `tests/TimeModel.test.ts` | Sample model unit tests — replace with real physics tests |
-| `tests/memory-leak.test.ts` | WeakRef + `forceGC` dispose regression (fleet pattern) |
-| `tests/fuzz/fuzz.spec.ts` | Optional Playwright fuzz smoke via joist `?fuzz` |
-| `playwright.config.ts` | Chromium project + Vite webServer for fuzz |
+| `tests/FluidUniforms.test.ts` | CPU/GPU struct layout contract |
+| `tests/FluidGridSpec.test.ts` | Dispatch arithmetic, square cells, uv mapping |
+| `tests/FlowRegime.test.ts` | Reynolds thresholds and boundaries |
+| `tests/FluidModel.test.ts` | Derived Re, reset, reachable regimes, shader codes |
+| `tests/memory-leak.test.ts` | WeakRef dispose regression (both models) |
+| `tests/harness/engine.html` | Page that loads the real engine for the test below |
+| `tests/fuzz/engine.spec.ts` | **The solver**, in a real browser, verified by pixel readback |
+| `tests/fuzz/fuzz.spec.ts` | joist `?fuzz` smoke |
 
-- Put unit tests only under root `tests/`, mirroring `src/` (never co-locate or use `__tests__/`).
-- Change the `name` passed to `init()` in `tests/setup.ts` to match `package.json` after `npm run rename`.
-- Run `npm test`. CI runs the suite when a `test` script is present.
-- Expand `memory-leak.test.ts` for any component that adds/removes nodes or links Properties at
-  runtime (see OpticsLab for a deep suite).
-- Optional: `npm run test:fuzz` / `test:fuzz:quick` (not part of default CI).
+`engine.spec.ts` needs a WebGPU adapter and skips without one; it takes several
+minutes on a software rasterizer, so it is not part of `npm test`.
 
 ## Commands
 
@@ -134,72 +122,20 @@ npm run lint && npm run check && npm run build && npm test
 | `npm start` / `npm run dev` | Vite dev server |
 | `npm run build` | Type-check + production build |
 | `npm run build:single` | Single-file build mode |
-| `npm run check` | TypeScript (`tsc --noEmit` + scripts project) |
+| `npm run check` | TypeScript (`tsc --noEmit` + scripts + tests projects) |
 | `npm run lint` / `npm run fix` | Biome check / auto-fix |
 | `npm test` | Vitest unit tests |
-| `npm run test:fuzz` | Playwright fuzz smoke |
-| `npm run test:fuzz:quick` | 10s fuzz |
+| `npm run test:fuzz` | Playwright: engine integration + fuzz smoke |
 | `npm run icons` | Regenerate PWA icons |
-| `npm run rename` | Sim-level fork/rename (`--id`, `--name`) |
-| `npm run scaffold-screens` | Emit N screens (`--screens Intro,Lab`) |
 
-## Customizing a new sim from this template
+## Query parameters
 
-### Recommended: Baton create-sim
-
-```sh
-Baton/scripts/create-sim.sh --repo Friction --name "Friction" --screens Intro,Lab --shared-model --onboard
-```
-
-### Manual: GitHub template + rename + scaffold
-
-```sh
-npm install
-npm run rename -- --id friction --name "Friction"
-npm run scaffold-screens -- --screens Intro,Lab --shared-model
-# omit --screens for one screen named after the sim; omit --shared-model for independent models
-npm run fix     # required: both scripts reorder imports, which Biome then sorts
-npm run check
-```
-
-`rename` updates package id and metadata, display name, and every sim-level `Sim*`
-(Colors, Constants, Namespace, Panel, ButtonOptions, Preferences, query parameters).
-`scaffold-screens` owns screen folders (fleet naming: `src/intro/`, not `intro-screen/`).
-After both steps no `Sim*` identifier should remain — `grep -rn '\bSim[A-Z_]' src` to confirm.
-
-### Manual checklist (if not using the scripts)
-
-1. **Rename** — replace `fluid-dynamics` / `Fluid Dynamics` / `Sim` prefix in `init.ts`, `brand.ts`, `package.json` (name, description, keywords, repository.url), Colors/Constants/Namespace/Panel/ButtonOptions/Preferences
-2. **Screens** — run `scaffold-screens` or mirror `intro/` into kebab folders
-3. **Locale** — add `strings_XX.json`, register in `StringManager`, add locale to `init.ts` `availableLocales`
-4. **Icon** — edit `public/icons/icon.svg`, run `npm run icons`; match theme color in `index.html` / `vite.config.ts`
-5. **Colors** — edit `*Colors.ts` (`default` + `projector` profiles per property)
-
-## Multi-screen sims
-
-Full guide: [`doc/multi-screen.md`](doc/multi-screen.md)
-
-Summary:
-- Prefer `npm run scaffold-screens -- --screens Intro,Lab` (add `--shared-model` for a root model)
-- Or create a screen folder mirroring `src/intro/` for each screen (kebab names, no `-screen` suffix)
-- Add screen-name keys to all locale JSON files; nest `a11y` per screen
-- Expose new getters in `StringManager.getScreenNames()` / `get{Screen}A11yStrings()`
-- Shared state: `--shared-model` → `common/model/SharedModel.ts` composed per screen (rename to a domain type)
-- Add `src/common/FluidDynamicsScreenIcons.ts` with `create{Screen}Icon()` factories; wire `homeScreenIcon` + `navigationBarIcon` on each Screen
-- Register all screens in the `screens` array in `main.ts`
-
-## Using this template beyond a direct copy
-
-| Approach | When to use |
+| Parameter | Purpose |
 |---|---|
-| **`Baton/scripts/create-sim.sh`** | Agents / fleet — create repo, rename, scaffold N screens |
-| **GitHub template** ("Use this template") | Humans starting a sim in the browser |
-| `npm run rename` + `scaffold-screens` | Same, after cloning the template |
-| **npm workspace / monorepo** | Managing a suite of sims with shared tooling |
-| **git subtree** for pulling updates | Keeping forks in sync with template improvements |
-
-See `doc/multi-screen.md` → "Using this template beyond a direct copy" for details.
+| `highQualitySolver` | Public. Initial value of the Preferences → Simulation toggle (50 vs 30 Jacobi sweeps). |
+| `pressureIterations` | Development only. Overrides both the default and the preference; `0` means "use the preference". |
 
 ## PWA
 
-After `npm run build`, the sim is installable offline via Workbox (`dist/manifest.webmanifest`).
+After `npm run build`, the sim is installable offline via Workbox
+(`dist/manifest.webmanifest`).

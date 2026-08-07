@@ -1,50 +1,141 @@
-# Model - Fluid Dynamics
-
-This document describes the model (the underlying physics, math, and behavior) for the simulation, in
-terms appropriate for an educator. It is the companion to
-[implementation-notes.md](./implementation-notes.md), which targets developers.
-
-> **Replace this entire file when forking.** The template ships with no domain physics — only the
-> section structure below. Real OpenPhysics sims (e.g. Stern Gerlach, Light Propagation) fill each
-> section with equations, ranges, and simplifications verified against their model code.
+# Fluid Dynamics — Model
 
 ## Overview
 
-*One or two paragraphs describing what the simulation models and the key ideas a student should take
-away. Write for a teacher, not a programmer — avoid code and class names.*
+An incompressible viscous fluid flows left to right through a two-dimensional
+channel past a fixed body. The simulation exists to make one thing visible: as
+the Reynolds number rises, the wake behind the body changes character — from
+smooth attached flow, to a steady pair of recirculation bubbles, to a periodic
+Kármán vortex street, to a wake that has lost coherence altogether.
 
-**Example (do not ship):** "The simulation models a block sliding on a ramp with adjustable friction
-and angle. Students see how the component of gravity parallel to the surface sets acceleration and
-how static vs kinetic friction limits motion."
-
-The template's `IntroModel` is an empty coordinator — replace it with real state and a `step(dt)` /
-`reset()` that implement your physics.
+The learner controls the flow speed (Intro) or the speed, viscosity and body
+(Lab). What actually decides the wake's character is the single dimensionless
+group those combine into, which is why it is displayed next to the flow.
 
 ## Quantities and units
 
-*List the primary modeled quantities, their symbols, units (SI where applicable), and control ranges.
-Mirror the ranges enforced in your `*Constants.ts` or model `Range` options.*
-
-| Quantity | Symbol | Units | Range |
+| Symbol | Quantity | Unit | Range |
 |---|---|---|---|
-| *(example)* time | t | s | 0 – ∞ |
-| *(example)* mass | m | kg | 0.1 – 5.0 |
+| **u** | velocity field | m/s | — |
+| *p* | pressure (divided by density) | m²/s | — |
+| ω | vorticity, ∂v/∂x − ∂u/∂y | 1/s | — |
+| *U* | inflow speed | m/s | 0.05 – 3 |
+| ν | kinematic viscosity | m²/s | 3×10⁻⁴ – 10⁻¹ |
+| *D* | obstacle diameter | m | 0.05 – 0.35 |
+| *L* × *H* | channel size | m | 2 × 1 |
+| *h* | grid cell size | m | 1/128 (standard), 1/256 (fine) |
+| Re | Reynolds number, *UD*/ν | — | ≈0.08 – 3500 |
+
+Density is not a separate quantity: it is constant, and dividing the momentum
+equation through by it leaves the kinematic viscosity and a pressure in m²/s.
+Nothing in the simulation depends on the fluid's actual density.
 
 ## Governing equations
 
-*State the equations or rules that drive the model, with a sentence explaining each. Use a smaller
-fixed time step than the screen default if the integration requires it; the model makes no assumption
-about frame rate.*
+The incompressible Navier–Stokes equations:
 
-**Example (do not ship):** For a damped spring, m·a = −k·x − b·v (+ gravity if applicable).
+```
+∂u/∂t + (u·∇)u = −∇p + ν∇²u + f
+∇·u = 0
+```
+
+and a passive tracer (the dye) carried by the flow without affecting it:
+
+```
+∂c/∂t + (u·∇)c = −κc
+```
+
+## Solution method
+
+Jos Stam's *Stable Fluids* operator splitting, one pass per term, all in WGSL
+compute shaders. Each frame advances the velocity field through:
+
+1. **Advection** — (u·∇)u, by semi-Lagrangian backtrace with bilinear
+   interpolation. Unconditionally stable at any timestep.
+2. **Diffusion** — ν∇²u, solved implicitly: (I − νΔt∇²)u = u₀, by 12 Jacobi
+   sweeps. Implicit because the explicit stability limit Δt < h²/4ν is far below
+   one frame at the high-viscosity end of the range.
+3. **Vorticity confinement** — a correction, not a physical term. See below.
+4. **Forcing and boundaries** — inflow, outflow, walls, and the learner's
+   pointer.
+5. **Projection** — ∇·u is computed, ∇²p = ∇·u is solved by 30 Jacobi sweeps
+   (50 with the higher-accuracy preference), and ∇p is subtracted. By the
+   Helmholtz–Hodge decomposition this leaves the divergence-free part of the
+   field, which is what incompressibility means.
+
+The dye is then injected at the inflow and advected by the finished velocity
+field.
+
+### Grid
+
+Cell-centred and collocated — velocity, pressure, dye and vorticity all live at
+the same points. 256 × 128 cells over the 2 m × 1 m channel by default, 512 × 256
+on the Lab screen's fine setting. Cells are square at both resolutions.
+
+### Boundary conditions
+
+| Boundary | Condition |
+|---|---|
+| Inflow (left) | **u** = (*U*, small perturbation) |
+| Outflow (right) | ∂**u**/∂x = 0, *p* = 0 |
+| Top and bottom walls | free slip: *v* = 0, *u* unconstrained |
+| Obstacle surface | no slip: **u** = 0; ∂p/∂n = 0 |
+
+The Neumann pressure condition on the obstacle is what makes the body solid. Left
+out, the projection pushes fluid straight through it and no wake forms at all.
 
 ## Simplifications and assumptions
 
-*Note anything intentionally idealized or omitted relative to the real-world phenomenon (e.g. no air
-resistance, point masses, instantaneous response), so educators can set expectations.*
+**Two dimensions.** Real turbulence is three-dimensional: vortex stretching, the
+mechanism that drives the energy cascade to small scales, does not exist in 2D.
+What the high-Reynolds-number end of this simulation shows is a 2D wake that has
+lost coherence, which looks turbulent and is not. The laminar and vortex-shedding
+regimes, which are genuinely two-dimensional phenomena, are faithful.
 
-**Example (do not ship):** "Massless spring; linear damping only; motion confined to one dimension."
+**The displayed Reynolds number is nominal.** Re = *UD*/ν is computed from the
+values the learner set. The *effective* Reynolds number is lower, because
+semi-Lagrangian advection is itself dissipative — it behaves like an extra
+viscosity of order *h*|**u**|/2, which at the default grid is comparable to the
+physical viscosity in the middle of its range. The regime boundaries in
+`FlowRegime.ts` are the classical values for a circular cylinder (Re ≈ 5, 47 and
+200), and the solver was tuned to reproduce the matching *behaviour* at those
+nominal numbers rather than the labels being moved to fit the solver.
+
+**Vorticity confinement is not physics.** Semi-Lagrangian advection damps the
+smallest resolved eddies within a few steps — exactly the scale of the vortices
+being shed. Confinement (Fedkiw, Stam & Jensen 2001) adds a force along the
+gradient of |ω| that pushes rotation back toward its concentrations, restoring
+what the numerics removed. It adds energy to the flow, so it is a visual-fidelity
+knob, not a term in Navier–Stokes.
+
+Its strength is scaled by *h*|**u**|/2 ÷ (*h*|**u**|/2 + ν), the fraction of the
+total damping that is numerical. This matters: at full strength it destabilises
+wakes that should be steady, and a cylinder at Re ≈ 15 sheds vortices it has no
+business shedding. With the scaling, the low-Reynolds-number end shows the
+attached symmetric wake it should.
+
+**The inflow is slightly perturbed.** Flow past a cylinder is symmetric about the
+centreline, and so is the grid; a perfectly symmetric initial condition stays
+symmetric forever and never sheds, at any Reynolds number. Real flow escapes this
+because no laboratory inflow is perfectly uniform. The same is done here, with a
+transverse perturbation of 0.4% of the inflow speed — enough to seed the
+instability, far too small to see in the flow it produces.
+
+**Pressure is collocated with velocity.** This admits a checkerboard pressure mode
+that nothing damps once the viscosity is small enough; it appears as speckle on
+the obstacle's surface. The viscosity slider's floor (3×10⁻⁴ m²/s) is set to keep
+it out of the picture. A staggered (MAC) grid would remove it properly.
+
+**The Jacobi solves do not converge.** Thirty sweeps leave real residual
+divergence. It is far below what is visible in the dye, which is the standard the
+simulation is held to.
 
 ## References
 
-*Optional: textbook sections, papers, or standards the model is based on.*
+- Stam, J. (1999). *Stable Fluids.* SIGGRAPH '99, 121–128.
+- Fedkiw, R., Stam, J. & Jensen, H. W. (2001). *Visual Simulation of Smoke.*
+  SIGGRAPH '01, 15–22. (Vorticity confinement.)
+- Williamson, C. H. K. (1996). *Vortex dynamics in the cylinder wake.*
+  Annual Review of Fluid Mechanics 28, 477–539. (Transition Reynolds numbers.)
+- Harris, M. (2004). *Fast Fluid Dynamics Simulation on the GPU.* GPU Gems,
+  chapter 38.

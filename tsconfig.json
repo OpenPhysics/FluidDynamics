@@ -24,7 +24,7 @@
     "verbatimModuleSyntax": true,
     "noUncheckedSideEffectImports": true,
     "erasableSyntaxOnly": true,
-    "types": ["vite/client", "vite-plugin-pwa/client"]
+    "types": ["vite/client", "vite-plugin-pwa/client", "@webgpu/types"]
   },
   "include": ["src"]
 }

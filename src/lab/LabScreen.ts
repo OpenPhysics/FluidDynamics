@@ -15,6 +15,7 @@ import { Screen } from "scenerystack/sim";
 import type { Tandem } from "scenerystack/tandem";
 import { createLabIcon } from "../common/FluidDynamicsScreenIcons.js";
 import FluidDynamicsColors from "../FluidDynamicsColors.js";
+import type { FluidDynamicsPreferencesModel } from "../preferences/FluidDynamicsPreferencesModel.js";
 import { LabModel } from "./model/LabModel.js";
 import { LabKeyboardHelpContent } from "./view/LabKeyboardHelpContent.js";
 import { LabScreenView } from "./view/LabScreenView.js";
@@ -23,10 +24,10 @@ import { LabScreenView } from "./view/LabScreenView.js";
 type LabScreenOptions = ScreenOptions & { tandem: Tandem };
 
 export class LabScreen extends Screen<LabModel, LabScreenView> {
-  public constructor(options: LabScreenOptions) {
+  public constructor(preferences: FluidDynamicsPreferencesModel, options: LabScreenOptions) {
     super(
       // Model factory — called once when the screen is first shown
-      () => new LabModel(),
+      () => new LabModel(preferences),
       // View factory — receives the model instance
       (model) =>
         new LabScreenView(model, {

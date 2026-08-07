@@ -1,11 +1,44 @@
 # Fluid Dynamics
 
-A reusable SceneryStack simulation template for one or N screens, built with
-[SceneryStack](https://scenerystack.org/), Vite 8, TypeScript 7, and Biome 2.
+Flow past an obstacle, from smooth laminar streamlines to a Kármán vortex
+street to a turbulent wake — solved in real time on the GPU.
+
+Built with [SceneryStack](https://scenerystack.org/), Vite 8, TypeScript 7 and
+Biome 2.
+
+## The simulation
+
+Dye is injected in bands at the left edge of a channel and carried past a body in
+the middle. Raising the flow speed (or lowering the viscosity) raises the
+Reynolds number, and the wake changes character: attached and symmetric below
+Re ≈ 47, shedding a periodic train of alternating vortices above it, and losing
+coherence entirely by Re ≈ 200. The Reynolds number and the regime it implies are
+shown beneath the field.
+
+- **Intro** — a fixed cylinder and one control: flow speed.
+- **Lab** — viscosity, obstacle size, shape (cylinder, flat plate, airfoil) and
+  position, vortex detail, dye fade, grid resolution, and four views of the field
+  (dye, speed, vorticity, pressure). Drag anywhere in the channel to push the
+  fluid and add dye.
+
+## Requirements
+
+**WebGPU.** The solver is Jos Stam's *Stable Fluids* running entirely in WGSL
+compute shaders — there is no CPU fallback. Recent Chrome, Edge and Safari
+support it. Where it is unavailable the sim boots normally and shows a message in
+place of the field.
+
+See [`doc/model.md`](doc/model.md) for the physics and its limits, and
+[`doc/implementation-notes.md`](doc/implementation-notes.md) for the architecture.
 
 ## Features
 
-- SceneryStack scaffold with model/view separation (`rename` + `scaffold-screens` for one or N screens)
+- Stable Fluids solver in WGSL compute shaders (advection, implicit viscous
+  diffusion, vorticity confinement, Jacobi pressure projection)
+- Analytic signed-distance obstacles, so the body can be dragged and resized with
+  no GPU resource churn
+- Live accessible description of the flow, shared by the field and the screen
+  summaries
 - English, Spanish, and French localization via `StringManager`
 - Default and projector color profiles
 - Progressive Web App (installable, offline-capable)
@@ -28,18 +61,14 @@ npm start        # dev server → http://localhost:5173
 | `npm run build` | Type-check + production build → `dist/` |
 | `npm run preview` | Preview the production build locally |
 | `npm test` | Run Vitest unit tests (includes memory-leak suite) |
-| `npm run test:fuzz` | Optional Playwright fuzz smoke (`?fuzz`, default 15s) |
+| `npm run test:fuzz` | Playwright: the WebGPU engine integration test + `?fuzz` smoke |
 | `npm run test:fuzz:quick` | Shorter fuzz smoke (10s) |
 | `npm run check` | TypeScript type check |
 | `npm run lint` | Biome lint check |
 | `npm run format` | Auto-format all files |
 | `npm run fix` | Lint + auto-fix |
 | `npm run icons` | Regenerate PNG icons from `public/icons/icon.svg` |
-| `npm run rename` | Sim-level fork/rename (`--id`, `--name`) |
-| `npm run scaffold-screens` | Emit N fleet-named screen packages from `intro/` (`--shared-model` optional) |
 | `npm run clean` | Remove `dist/` |
-
-New sims start at `version: "0.0.0"` in `package.json`. Bump only when cutting a release (for example `npm version patch` and a matching git tag). Keep `name` in kebab-case; it is separate from the SceneryStack sim identifier in `src/init.ts`.
 
 ## Tech Stack
 

@@ -1,135 +1,197 @@
-# Implementation Notes - Fluid Dynamics
+# Fluid Dynamics — Implementation Notes
 
-Developer-facing notes on the **SceneryStackTemplate** scaffold. **Replace and expand this file when
-forking** to describe your sim's real architecture (see Stern Gerlach or Light Propagation for
-target quality). Until then, this documents what the template provides out of the box.
+Companion to [`model.md`](model.md), which covers the physics. This file covers
+how the code is arranged and the non-obvious decisions in it.
 
-## Architecture Overview
-
-SceneryStackTemplate is the fleet-canonical starting point for new SceneryStack sims (one or N screens).
-It demonstrates Model–View separation, color profiles, localization, reset behavior, accessibility
-reference wiring, and reusable common components — **without** domain physics.
+## Architecture
 
 ```
-main.ts
-  └─ IntroScreen             (Screen<IntroModel, IntroScreenView>)
-       ├─ IntroModel          state + logic  (src/intro/model/)  ← stub: add physics here
-       └─ IntroScreenView     visuals        (src/intro/view/)
-            ├─ IntroScreenSummaryContent     (PDOM overview — reference a11y pattern)
-            └─ IntroKeyboardHelpContent      (keyboard help dialog)
+src/
+  main.ts                        Sim + screens + preferences
+  FluidDynamicsColors.ts         ProfileColorProperty instances (incl. the two dye colours)
+  FluidDynamicsConstants.ts      every named number: layout, grid, solver, physics ranges
+  FluidDynamicsNamespace.ts
 
-src/common/
-  ├─ FluidDynamicsPanel.ts           pre-themed panel (uses FluidDynamicsColors)
-  ├─ FluidDynamicsButtonOptions.ts   flat button / combo-box option bundles
-  └─ TimeModel.ts          composable play/pause + elapsed time
+  common/
+    model/
+      FluidModel.ts              all flow parameters + derived Re and regime
+      FlowRegime.ts              regime vocabulary and classification
+      ObstacleShape.ts           as-const union + shader codes
+      VisualizationMode.ts       as-const union + shader codes
+    gpu/
+      webgpuSupport.ts           adapter/device acquisition, device-loss reporting
+      FluidGridSpec.ts           grid geometry and dispatch arithmetic
+      FluidUniforms.ts           CPU mirror of the WGSL uniform struct
+      WebGPUFluidEngine.ts       textures, pipelines, bind groups, one frame
+      shaders/*.wgsl             the solver
+    view/
+      FluidScreenView.ts         layout and wiring shared by both screens
+      FluidFieldNode.ts          the Scenery ↔ WebGPU bridge
+      FluidControlPanel.ts       sliders and pickers; option-selected control set
+      FlowReadoutNode.ts         Reynolds number and regime
+      ObstacleHandleNode.ts      invisible drag/keyboard handle over the body
+      WebGPUUnavailableNode.ts   the fallback message
+      fluidDescription.ts        live a11y description shared by field and summary
+    TimeModel.ts, FluidDynamicsPanel.ts, FluidDynamicsButtonOptions.ts,
+    FluidDynamicsScreenIcons.ts
 
-src/preferences/
-  ├─ FluidDynamicsPreferencesModel   sim-specific pref state
-  ├─ FluidDynamicsPreferencesNode    pref UI in Preferences → Simulation
-  └─ fluidDynamicsQueryParameters    QueryStringMachine declarations
+  intro/, lab/                   screen packages; each is a thin wrapper
+  preferences/                   query parameters + Preferences → Simulation
+  i18n/                          StringManager + en/fr/es
 ```
 
-Data flows Model → View through AXON `Property` objects (`.link()` / `.lazyLink()`). The view never
-integrates physics; the model never imports scenery.
+## Where the solver lives, and why it is not in the model
 
-## Forking checklist
+Fleet convention is *"the view never integrates physics; the model never imports
+scenery."* This sim keeps the second half exactly and bends the first, which is a
+deliberate carve-out (also recorded in `CLAUDE.md`).
 
-### Automated rename + scaffold (recommended)
+The reason is that there is no CPU-side fluid state to put in a model. Velocity,
+pressure, dye and vorticity exist only as GPU textures; there is no array to
+mirror and no step function that could run without a `GPUDevice`. So:
 
-```sh
-npm run rename -- --id my-sim --name "My Simulation"
-npm run scaffold-screens -- --screens Intro,Lab   # or omit --screens for one screen
-npm run check
+- **`common/model/`** holds the *parameters* — the quantities a learner sets, plus
+  the Reynolds number and regime derived from them. No scenery imports, no GPU
+  imports, fully unit-testable.
+- **`common/gpu/`** holds the solver. It imports nothing from scenery.
+- **`common/view/FluidFieldNode.ts`** is the only file that touches both.
+
+This mirrors `Resonance/src/chladni-patterns/view/renderers/WebGLParticleRenderer.ts`,
+where a GPU renderer also lives under `view/`.
+
+## The Scenery ↔ WebGPU bridge
+
+Scenery has no WebGPU node, and `CanvasNode` is not one either — it does not own
+a canvas. Scenery hands `paintCanvas()` a `CanvasRenderingContext2D` belonging to
+its own shared canvas layer, already transformed into the node's local frame.
+There is nothing there to call `getContext("webgpu")` on.
+
+So the engine owns a **detached** `HTMLCanvasElement`, never added to the
+document, and configures *that* with a `"webgpu"` context. Each frame:
+
+```
+IntroScreenView.step(dt) → FluidFieldNode.update(dt)
+    → engine.step(dt, values)        one encoder: one compute pass, one render pass
+    → this.invalidatePaint()
+
+later, inside Display.updateDisplay():
+    FluidFieldNode.paintCanvas(ctx) → ctx.drawImage(gpuCanvas, …)
 ```
 
-Or from the workspace: `Baton/scripts/create-sim.sh --repo MySim --name "My Simulation"`.
+Three rules that are easy to get wrong:
 
-`scripts/rename-sim.ts` updates sim-level identifiers (package id, Colors, Preferences).
-`scripts/scaffold-screens.ts` emits fleet-named screen folders and wires main/strings/icons.
+- **`drawImage`, never `putImageData`.** `putImageData` ignores the canvas
+  transformation matrix Scenery has already applied, so the field would land at
+  the wrong place and scale. (Same trap documented in VariableStarPhotometry's
+  `StarFieldNode`.)
+- **`paintCanvas` only blits.** It runs inside `Display.updateDisplay()`, where
+  mutating a Node is unsafe. All GPU work happens in `update()`.
+- **`invalidatePaint()` every frame.** Scenery does not re-invoke `paintCanvas` on
+  its own schedule.
 
-### Manual steps (after rename/scaffold or if skipping the scripts)
+The view's `step()` deliberately does **not** call `model.step()`: joist already
+steps the active screen's model, and doing it here too runs the clock twice as
+fast.
 
-1. **`doc/model.md`** — educator physics (equations, ranges, simplifications).
-2. **`doc/implementation-notes.md`** — this file, rewritten for your architecture.
-3. **Screen model(s)** — real Properties, `step(dt)`, `reset()`; compose `TimeModel` if animated.
-4. **Screen view(s)** — play area + controls; wire `ResetAllButton` to `model.reset()`.
-5. **`*Colors.ts`** — sim palette (default + projector profiles).
-6. **Locale JSON** — title, strings, `a11y` keys; register locales in `init.ts`.
-7. **`public/icons/icon.svg`** → `npm run icons`; align theme color in `index.html` / vite config.
-8. **`tests/setup.ts`** — `init({ name: … })` must match `package.json` name after rename.
-9. **`CLAUDE.md`** — sim-specific file map and pitfalls for AI assistants.
+### Presentation goes through an offscreen target
 
-## Common components (keep when forking)
+The display pass renders into an offscreen texture, which is then copied to the
+canvas with `copyTextureToTexture`. The extra copy buys two things: the finished
+frame can be read back with `readDisplayPixels()` for testing, and presentation
+becomes a single command that can be skipped where it is unsupported.
 
-### FluidDynamicsPanel
+**Known environment limitation.** Headless Chromium under WSL2 loses the GPU
+device the instant *any* WebGPU canvas is presented — a bare three-vertex render
+into a canvas context is enough, with no compute involved. Compute passes and
+offscreen rendering work correctly there. The sim's behaviour in such an
+environment is to show its "WebGPU is not available — the graphics device was
+lost" message, which is the honest outcome. The engine integration test runs with
+`presentToCanvas: false` and checks the solver by reading pixels back instead.
 
-Every control panel should use `FluidDynamicsPanel` so projector-mode switching is automatic:
+## Ping-pong and bind groups
 
-```typescript
-import { FluidDynamicsPanel } from "../../common/FluidDynamicsPanel.js";
-const panel = new FluidDynamicsPanel(content);
-const panelWide = new FluidDynamicsPanel(content, { xMargin: 20 });
-```
+A shader cannot read and write the same texture, so velocity, dye and pressure
+each exist twice and swap after every write. Bind groups reference concrete
+texture views, so **every parity combination a frame can reach is built once at
+construction** — allocating bind groups inside the frame loop is the classic way
+to make a WebGPU renderer allocate sixty times a second.
 
-### TimeModel
+Texture formats are chosen around filtering: velocity and dye are `rgba16float`
+because semi-Lagrangian advection wants hardware bilinear interpolation and
+`rgba16float` is both filterable and storage-capable in core WebGPU. `rg32float`
+would fit velocity exactly but is not filterable without an optional feature.
+Pressure, divergence and curl are `r32float`, declared `unfilterable-float`, and
+read only with `textureLoad`.
 
-Compose into your screen model for animation (do not subclass `TimeModel`):
+## The uniform layout contract
 
-```typescript
-export class MyModel implements TModel {
-  public readonly timer = new TimeModel();  // pass true to auto-play on startup
+WebGPU validates buffer sizes but not struct layouts. If the offsets in
+`FluidUniforms.ts` drift from the `SimUniforms` declaration in `common.wgsl`,
+every shader silently reads a shifted field and the failure looks like a physics
+bug. `tests/FluidUniforms.test.ts` parses the WGSL struct and asserts that its
+member order matches the offset table, that alignment rules are satisfied, and
+that the members exactly fill the 128-byte buffer.
 
-  public step(dt: number): void {
-    this.timer.step(dt);
-    // physics uses this.timer.timeProperty.value
-  }
-  public reset(): void { this.timer.reset(); /* restore initial state */ }
-}
-```
+## Shaders are loaded with `?raw`
 
-Wire `TimeControlNode` to `model.timer.isPlayingProperty` in the view.
+`import src from "./shaders/advect.wgsl?raw"`, never `fetch()`. Two reasons, both
+already baked into `vite.config.ts`: the `inlineSingleFile()` plugin's
+correctness note requires the bundle to have no runtime fetches of local files,
+and the PWA's `workbox.globPatterns` does not include `.wgsl`, so a fetched
+shader would break offline. `?raw` inlines the shader into the JS bundle at build
+time and satisfies both. WGSL has no `#include`, so `common.wgsl` — the uniform
+struct plus the obstacle geometry and grid helpers — is concatenated ahead of
+every shader in TypeScript.
 
-### FluidDynamicsButtonOptions
+## Accessibility
 
-Spread flat button options into every push/round button and `TimeControlNode` (see `CLAUDE.md`).
-Use `FLUID_DYNAMICS_COMBO_BOX_OPTIONS` + `LIGHT_SURFACE_TEXT_FILL` for light control surfaces on dark panels.
+A screen-reader user cannot see the dye, so `common/view/fluidDescription.ts`
+builds a live sentence naming the body, the speed, the Reynolds number and the
+regime. The same Property is used as the fluid field's `accessibleParagraph` and
+as both screens' `currentDetailsContent`, so the field and the summary can never
+disagree.
 
-## Accessibility (reference implementation)
+Every control carries an `accessibleName` from the shared `a11y.fluid` string
+group. The obstacle handle is a transparent — not invisible — `Circle`: an
+invisible Node is removed from the parallel DOM and can be neither focused nor
+hit-tested.
 
-The template is the **canonical OpenPhysics a11y reference**:
+`WebGPUUnavailableNode` sets `tagName: "div"` for a load-bearing reason: Scenery
+only creates a paragraph sibling when the paragraph content is non-empty, and the
+message is empty until a failure reason arrives. Without a primary sibling to
+fall back on, `getPlaceableSibling()` asserts and the sim fails to launch.
 
-- PDOM `accessibleName` on interactive nodes (prefer live `StringProperty`s).
-- `IntroScreenSummaryContent` with a live `currentDetailsContent` `DerivedProperty` over model state.
-- Explicit `pdomOrder` + `IntroKeyboardHelpContent`.
-- Strings under `a11y` in locale JSON → `StringManager.getIntroA11yStrings()`.
+## Disposal
 
-Full checklist: [Baton/ACCESSIBILITY.md](https://github.com/OpenPhysics/Baton/blob/main/ACCESSIBILITY.md).
+`FluidModel.dispose()` is guarded by an `isDisposed` flag. A plain `Property`
+tolerates a second `dispose()`, but `DerivedProperty` nulls its dependency list on
+the first and throws on the second — and the fleet's memory-leak suite requires
+idempotence.
 
-## Testing (fleet layout — keep when forking)
+`FluidScreenView.dispose()` does **not** call `super.dispose()`: joist's
+`ScreenView` is intentionally non-disposable and its `setPDOMOrder` override
+throws during ParallelDOM teardown. It drains a `disposers` array instead.
 
-| Path | Purpose |
+## Testing
+
+| Path | What it covers |
 |---|---|
-| `vitest.config.ts` | `happy-dom`; `setupFiles: ["./tests/setup.ts"]`; `execArgv: ["--expose-gc"]` |
-| `tests/setup.ts` | Canvas/AudioContext mocks + `init()` before SceneryStack imports |
-| `tests/TimeModel.test.ts` | **Replace** with real model/physics tests mirroring `src/` |
-| `tests/memory-leak.test.ts` | WeakRef + `forceGC` dispose regression |
-| `tests/fuzz/fuzz.spec.ts` | Optional Playwright smoke via `?fuzz` |
+| `tests/FluidUniforms.test.ts` | the CPU/GPU struct layout contract |
+| `tests/FluidGridSpec.test.ts` | dispatch arithmetic, square cells, uv mapping |
+| `tests/FlowRegime.test.ts` | Reynolds thresholds and their boundaries |
+| `tests/FluidModel.test.ts` | derived Re, reset, reachable regimes, shader codes |
+| `tests/memory-leak.test.ts` | WeakRef dispose regression for both models |
+| `tests/fuzz/engine.spec.ts` | **the solver itself**, in a real browser |
+| `tests/fuzz/fuzz.spec.ts` | joist `?fuzz` smoke |
 
-Run `npm test`. Expand `memory-leak.test.ts` when adding runtime-created nodes or Property links.
+`tests/fuzz/engine.spec.ts` is the interesting one. The fluid state is
+unreachable from Vitest, so it drives the real engine through
+`tests/harness/engine.html` (transpiled on the fly by the Vite dev server), runs
+real compute passes, and reads frames back. It checks that dye is carried
+downstream, that every obstacle shape blocks the flow, that removing the obstacle
+leaves the channel uniform, that reset clears the field, that every visualization
+mode renders — and that the wake is steady below the shedding threshold and
+unsteady above it, which is the simulation's central claim.
 
-## Multi-screen simulations
-
-Default is single-screen. To add screens, see **`doc/multi-screen.md`**: per-screen folders mirroring
-`src/intro/`, `StringManager` screen-name getters, optional shared root model, a shared
-`src/common/FluidDynamicsScreenIcons.ts` module (`create{Screen}Icon()` factories wired as
-`homeScreenIcon` / `navigationBarIcon`), and register all screens in `main.ts`.
-
-## PWA
-
-After `npm run build`, the sim is installable offline via Workbox (`dist/manifest.webmanifest`).
-
-## Known template stubs (remove when forking)
-
-- `IntroModel.step()` / `reset()` — empty placeholders until you add physics.
-- Placeholder play-area content in `IntroScreenView` — replace with real UI.
-- `tests/TimeModel.test.ts` — sample only; add tests for your model under `tests/`.
+It needs a WebGPU adapter (`playwright.config.ts` passes
+`--enable-unsafe-webgpu --enable-features=Vulkan`) and skips without one.

@@ -7,29 +7,81 @@
   "a11y": {
     "intro": {
       "screenSummary": {
-        "playArea": "The play area shows the main simulation content.",
-        "controlArea": "The control area has a Reset All button that returns the simulation to its starting state.",
-        "interactionHint": "Explore the simulation by interacting with its controls."
-      },
-      "currentDetails": "The simulation is in its initial state.",
-      "controls": {
-        "exampleControl": "Example control"
+        "playArea": "The play area is a channel of fluid flowing from left to right past a cylinder. Coloured dye is added in bands at the left edge so the flow can be seen.",
+        "controlArea": "The control area has a flow speed slider, play and pause buttons, and a Reset All button that returns the simulation to its starting state.",
+        "interactionHint": "Change the flow speed and listen for how the wake behind the cylinder changes. Drag inside the channel to push the fluid yourself."
       }
     },
     "lab": {
       "screenSummary": {
-        "playArea": "The play area shows the main simulation content.",
-        "controlArea": "The control area has a Reset All button that returns the simulation to its starting state.",
-        "interactionHint": "Explore the simulation by interacting with its controls."
-      },
-      "currentDetails": "The simulation is in its initial state.",
-      "controls": {
-        "exampleControl": "Example control"
+        "playArea": "The play area is a channel of fluid flowing from left to right past an obstacle you can move, resize and reshape. The field can show dye, speed, vorticity or pressure.",
+        "controlArea": "The control area has sliders for flow speed, viscosity, obstacle size, vortex detail and dye fade, pickers for the obstacle shape, the displayed field and the grid resolution, play and pause buttons, and a Reset All button.",
+        "interactionHint": "Raise the flow speed or lower the viscosity to raise the Reynolds number. Switch to the vorticity view to see individual vortices most clearly."
       }
+    },
+    "fluid": {
+      "fieldName": "Fluid channel",
+      "fieldHelpText": "Drag inside the channel to push the fluid and add dye.",
+      "fieldDescriptionPattern": "Fluid flows from left to right past a {{shape}} at {{speed}} metres per second. The Reynolds number is about {{reynolds}}, so the wake is a {{regime}}.",
+      "flowSpeed": "Flow speed",
+      "flowSpeedHelpText": "Raise the speed to increase the Reynolds number and destabilise the wake.",
+      "viscosity": "Viscosity",
+      "viscosityHelpText": "Thicker fluid damps the wake and lowers the Reynolds number.",
+      "obstacleSize": "Obstacle size",
+      "obstacleShape": "Obstacle shape",
+      "visualization": "Field to display",
+      "vorticity": "Vortex detail",
+      "dyeFade": "Dye fade",
+      "resolution": "Grid resolution",
+      "obstacleHandle": "Obstacle position",
+      "obstacleHandleHelpText": "Drag to move the obstacle within the channel."
     }
+  },
+  "controls": {
+    "flowSpeed": "Flow Speed",
+    "viscosity": "Viscosity",
+    "obstacleSize": "Obstacle Size",
+    "obstacleShape": "Obstacle",
+    "visualization": "Show",
+    "vorticity": "Vortex Detail",
+    "dyeFade": "Dye Fade",
+    "resolution": "Grid",
+    "speedValuePattern": "{{value}} m/s",
+    "sizeValuePattern": "{{value}} m",
+    "viscosityValuePattern": "{{value}} m²/s",
+    "reynoldsPattern": "Re ≈ {{value}}"
+  },
+  "shapes": {
+    "none": "None",
+    "cylinder": "Cylinder",
+    "plate": "Flat Plate",
+    "airfoil": "Airfoil"
+  },
+  "visualizations": {
+    "dye": "Dye",
+    "speed": "Speed",
+    "vorticity": "Vorticity",
+    "pressure": "Pressure"
+  },
+  "resolutions": {
+    "standard": "Standard",
+    "fine": "Fine"
+  },
+  "regimes": {
+    "creeping": "Creeping flow",
+    "steadyWake": "Steady wake",
+    "vortexShedding": "Vortex shedding",
+    "turbulent": "Turbulent wake"
+  },
+  "webgpu": {
+    "unavailableTitle": "WebGPU is not available",
+    "noWebGPU": "This browser does not support WebGPU. Fluid Dynamics computes the flow on the graphics card, so it needs a recent version of Chrome, Edge, or Safari.",
+    "noAdapter": "No compatible graphics adapter was found, so the flow cannot be computed.",
+    "noDevice": "The graphics device could not be started, so the flow cannot be computed.",
+    "deviceLost": "The graphics device was lost. Reload the page to restart the simulation."
   },
   "preferences": {
     "title": "Simulation",
-    "exampleToggle": "Example Toggle"
+    "highQualitySolver": "Higher solver accuracy"
   }
 }

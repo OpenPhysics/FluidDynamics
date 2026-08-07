@@ -1,0 +1,86 @@
+<!doctype html>
+<!--
+  Engine integration harness.
+
+  Loaded by tests/fuzz/engine.spec.ts through the Vite dev server, which
+  transpiles the TypeScript imports below on the fly. It exists because the
+  solver's correctness lives on the GPU and cannot be reached from Vitest: the
+  only way to check that the fluid actually behaves like a fluid is to run real
+  compute passes and read the rendered frame back.
+
+  Presentation is deliberately disabled (presentToCanvas: false). Some headless
+  environments — including Chromium under WSL2 — lose the device the moment a
+  WebGPU canvas is presented, while compute and offscreen rendering work fine.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Fluid engine harness</title></head>
+  <body>
+    <script type="module">
+      import "/src/init.ts";
+      import { FluidGridSpec } from "/src/common/gpu/FluidGridSpec.ts";
+      import { WebGPUFluidEngine } from "/src/common/gpu/WebGPUFluidEngine.ts";
+      import { acquireFluidDevice } from "/src/common/gpu/webgpuSupport.ts";
+
+      const defaults = {
+        dyeColorA: [0.22, 0.74, 0.97, 1],
+        dyeColorB: [0.98, 0.57, 0.24, 1],
+        obstacleCenterX: 0.5,
+        obstacleCenterY: 0.5,
+        pointerX: 0,
+        pointerY: 0,
+        pointerDeltaX: 0,
+        pointerDeltaY: 0,
+        viscosity: 1e-3,
+        vorticity: 18,
+        dyeDissipation: 0.75,
+        inflowSpeed: 1,
+        obstacleRadius: 0.075,
+        obstacleShape: 1,
+        visualization: 0,
+        pointerActive: false,
+        pointerRadius: 0.08,
+        velocityScale: 2,
+        time: 0,
+        pressureIterations: 30,
+      };
+
+      let engine = null;
+
+      window.harness = {
+        async start(resolution = "standard") {
+          const acquisition = await acquireFluidDevice();
+          if (!acquisition.available) {
+            return { ok: false, reason: acquisition.reason };
+          }
+          engine = new WebGPUFluidEngine(
+            document.createElement("canvas"),
+            acquisition.device,
+            FluidGridSpec.forResolution(resolution),
+            () => { window.harness.failed = true; },
+            { presentToCanvas: false },
+          );
+          return { ok: true, format: engine.displayFormat };
+        },
+
+        /** Runs `steps` solver steps of `dt` seconds with the given overrides. */
+        run(steps, dt, overrides = {}) {
+          let time = overrides.time ?? 0;
+          for (let i = 0; i < steps; i++) {
+            time += dt;
+            engine.step(dt, { ...defaults, ...overrides, time });
+          }
+          return { running: engine.isRunning, time };
+        },
+
+        async pixels() {
+          const bytes = await engine.readDisplayPixels();
+          return Array.from(bytes);
+        },
+
+        reset() { engine.reset(); },
+        dispose() { engine.dispose(); engine = null; },
+      };
+      window.harnessReady = true;
+    </script>
+  </body>
+</html>

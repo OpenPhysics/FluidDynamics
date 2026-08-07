@@ -72,6 +72,24 @@ const FluidDynamicsColors = {
     projector: "#1a1a1a",
   }),
 
+  // ── Fluid field ──────────────────────────────────────────────────────────────
+  // The two dye colors injected in alternating bands at the inflow. The
+  // interface between them is what actually reveals the flow, so they must stay
+  // clearly distinguishable — including for the most common colour-vision
+  // deficiencies, hence a blue/orange pair rather than red/green.
+
+  /** Dye injected in the odd bands at the inflow. */
+  dyeColorAProperty: new ProfileColorProperty(FluidDynamicsNamespace, "dyeA", {
+    default: "#38bdf8",
+    projector: "#0369a1",
+  }),
+
+  /** Dye injected in the even bands at the inflow. */
+  dyeColorBProperty: new ProfileColorProperty(FluidDynamicsNamespace, "dyeB", {
+    default: "#fb923c",
+    projector: "#c2410c",
+  }),
+
   // ── Light control surfaces ───────────────────────────────────────────────────
   // White chrome (combo boxes, flat push buttons, editable input fields) stays light
   // in both profiles; its text stays dark. Same values in default and projector mode,

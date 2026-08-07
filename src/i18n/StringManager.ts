@@ -97,6 +97,36 @@ export class StringManager {
   }
 
   /**
+   * Visible labels for the fluid controls, shared by both screens.
+   *
+   * The `shapes`, `visualizations`, `resolutions` and `regimes` groups are keyed
+   * by the same identifiers as the as-const unions in common/model/, so a value
+   * can be used to look its own label up.
+   */
+  public getFluidStrings() {
+    return {
+      controls: stringProperties.controls,
+      shapes: stringProperties.shapes,
+      visualizations: stringProperties.visualizations,
+      resolutions: stringProperties.resolutions,
+      regimes: stringProperties.regimes,
+    };
+  }
+
+  /** Accessibility strings for the fluid field and its controls, shared by both screens. */
+  public getFluidA11yStrings() {
+    return stringProperties.a11y.fluid;
+  }
+
+  /**
+   * Messages shown when WebGPU is unavailable. Keys after `unavailableTitle`
+   * match the `GpuUnavailableReason` codes in common/gpu/webgpuSupport.ts.
+   */
+  public getWebGPUStrings() {
+    return stringProperties.webgpu;
+  }
+
+  /**
    * Simulation-specific preference labels shown in Preferences → Simulation.
    */
   public getPreferences() {

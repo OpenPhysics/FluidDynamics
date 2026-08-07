@@ -27,9 +27,9 @@ export class FluidDynamicsPreferencesNode extends VBox {
       fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
     });
 
-    const exampleToggleCheckbox = new Checkbox(
-      preferencesModel.exampleToggleProperty,
-      new Text(prefStrings.exampleToggleStringProperty, {
+    const highQualitySolverCheckbox = new Checkbox(
+      preferencesModel.highQualitySolverProperty,
+      new Text(prefStrings.highQualitySolverStringProperty, {
         font: new PhetFont(14),
         fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
       }),
@@ -37,14 +37,14 @@ export class FluidDynamicsPreferencesNode extends VBox {
         checkboxColor: FluidDynamicsColors.controlSurfaceTextColorProperty,
         checkboxColorBackground: FluidDynamicsColors.controlSurfaceColorProperty,
         spacing: 8,
-        ...(tandem && { tandem: tandem.createTandem("exampleToggleCheckbox") }),
+        ...(tandem && { tandem: tandem.createTandem("highQualitySolverCheckbox") }),
       },
     );
 
     super({
       align: "left",
       spacing: 12,
-      children: [header, exampleToggleCheckbox],
+      children: [header, highQualitySolverCheckbox],
     });
   }
 }

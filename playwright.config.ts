@@ -1,5 +1,11 @@
 /**
- * Playwright configuration for optional fuzz testing (Template smoke).
+ * Playwright configuration for the fuzz smoke and the WebGPU engine integration
+ * test.
+ *
+ * The launch flags below are what make WebGPU available in headless Chromium on
+ * Linux. Without them `navigator.gpu.requestAdapter()` resolves to null, and
+ * engine.spec.ts skips instead of failing — which is also exactly the situation
+ * the sim's "WebGPU is not available" fallback exists for.
  */
 
 import { defineConfig } from "@playwright/test";
@@ -32,6 +38,9 @@ export default defineConfig({
       name: "chromium",
       use: {
         browserName: "chromium",
+        launchOptions: {
+          args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan"],
+        },
       },
     },
   ],

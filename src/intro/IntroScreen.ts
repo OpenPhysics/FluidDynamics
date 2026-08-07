@@ -15,6 +15,7 @@ import { Screen } from "scenerystack/sim";
 import type { Tandem } from "scenerystack/tandem";
 import { createIntroIcon } from "../common/FluidDynamicsScreenIcons.js";
 import FluidDynamicsColors from "../FluidDynamicsColors.js";
+import type { FluidDynamicsPreferencesModel } from "../preferences/FluidDynamicsPreferencesModel.js";
 import { IntroModel } from "./model/IntroModel.js";
 import { IntroKeyboardHelpContent } from "./view/IntroKeyboardHelpContent.js";
 import { IntroScreenView } from "./view/IntroScreenView.js";
@@ -23,10 +24,10 @@ import { IntroScreenView } from "./view/IntroScreenView.js";
 type IntroScreenOptions = ScreenOptions & { tandem: Tandem };
 
 export class IntroScreen extends Screen<IntroModel, IntroScreenView> {
-  public constructor(options: IntroScreenOptions) {
+  public constructor(preferences: FluidDynamicsPreferencesModel, options: IntroScreenOptions) {
     super(
       // Model factory — called once when the screen is first shown
-      () => new IntroModel(),
+      () => new IntroModel(preferences),
       // View factory — receives the model instance
       (model) =>
         new IntroScreenView(model, {

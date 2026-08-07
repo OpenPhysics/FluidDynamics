@@ -8,7 +8,10 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { FluidModel } from "../src/common/model/FluidModel.js";
 import { TimeModel } from "../src/common/TimeModel.js";
+import { IntroModel } from "../src/intro/model/IntroModel.js";
+import { FluidDynamicsPreferencesModel } from "../src/preferences/FluidDynamicsPreferencesModel.js";
 
 /**
  * Force garbage collection with multiple passes. When `earlyExitRef` is supplied
@@ -35,6 +38,40 @@ function createAndDisposeTimeModel(): WeakRef<object> {
   return ref;
 }
 
+/**
+ * FluidModel is the interesting case: its two DerivedProperties listen to three
+ * source Properties, so a missed dispose() would pin the whole model.
+ * The Properties are exercised first so the derivations actually fire.
+ */
+function createAndDisposeFluidModel(): WeakRef<object> {
+  const model = new FluidModel();
+  const ref = new WeakRef<object>(model);
+
+  model.flowSpeedProperty.value = 1.5;
+  model.kinematicViscosityProperty.value = 5e-3;
+  model.obstacleDiameterProperty.value = 0.25;
+  model.obstacleShapeProperty.value = "plate";
+  model.visualizationModeProperty.value = "vorticity";
+  expect(model.flowRegimeProperty.value).toBeDefined();
+
+  model.dispose();
+  return ref;
+}
+
+function createAndDisposeIntroModel(): WeakRef<object> {
+  // The screen model links to a preferences Property, so a leak here would also
+  // pin the preferences model — worth exercising rather than stubbing out.
+  const model = new IntroModel(new FluidDynamicsPreferencesModel());
+  const ref = new WeakRef<object>(model);
+
+  model.step(1 / 60);
+  model.fluid.flowSpeedProperty.value = 2;
+  model.reset();
+
+  model.dispose();
+  return ref;
+}
+
 describe("Memory leak regression", () => {
   it("global.gc is available (--expose-gc)", () => {
     expect(globalThis.gc).toBeDefined();
@@ -52,8 +89,26 @@ describe("Memory leak regression", () => {
     expect(ref.deref()).toBeUndefined();
   });
 
+  it("FluidModel is collected after dispose", async () => {
+    const ref = createAndDisposeFluidModel();
+    await forceGC(ref);
+    expect(ref.deref()).toBeUndefined();
+  });
+
+  it("IntroModel is collected after dispose", async () => {
+    const ref = createAndDisposeIntroModel();
+    await forceGC(ref);
+    expect(ref.deref()).toBeUndefined();
+  });
+
   it("double dispose() does not throw", () => {
     const model = new TimeModel();
+    model.dispose();
+    expect(() => model.dispose()).not.toThrow();
+  });
+
+  it("double dispose() of FluidModel does not throw", () => {
+    const model = new FluidModel();
     model.dispose();
     expect(() => model.dispose()).not.toThrow();
   });
@@ -62,6 +117,7 @@ describe("Memory leak regression", () => {
     const refs: WeakRef<object>[] = [];
     for (let i = 0; i < 10; i++) {
       refs.push(createAndDisposeTimeModel());
+      refs.push(createAndDisposeFluidModel());
     }
     await forceGC();
     const survivors = refs.filter((r) => r.deref() !== undefined).length;

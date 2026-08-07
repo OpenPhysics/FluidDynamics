@@ -1,48 +1,51 @@
 /**
  * IntroModel.ts
  *
- * The top-level model for the simulation screen.
+ * Model for the Intro screen: flow past a fixed cylinder, with a single control.
  *
- * Add your simulation's state here using reactive Property objects from
- * scenerystack/axon. The view observes these properties and updates automatically.
- *
- * ── Example ──────────────────────────────────────────────────────────────────
- *   import { BooleanProperty, NumberProperty } from "scenerystack/axon";
- *
- *   public readonly isRunningProperty = new BooleanProperty(false);
- *   public readonly timeProperty = new NumberProperty(0);    // seconds
- *
- * ── Step cycle ────────────────────────────────────────────────────────────────
- * The Sim calls step(dt) on every animation frame. Advance your model state
- * in that method (e.g. integrate equations, update positions).
- *
- * ── Reset ─────────────────────────────────────────────────────────────────────
- * reset() is called when the user presses Reset All. Call .reset() on every
- * Property declared here.
+ * The Intro screen exists to make one relationship visible — raise the flow
+ * speed and the wake goes from smooth, to a periodic Kármán vortex street, to
+ * turbulent. Everything that would dilute that (viscosity, obstacle shape and
+ * position, visualization mode, grid resolution) is left at its default here and
+ * exposed on the Lab screen instead. They are still real Properties on the
+ * shared FluidModel, so the view and the solver treat both screens identically.
  */
 import type { TModel } from "scenerystack/joist";
-import { SharedModel } from "../../common/model/SharedModel.js";
+import { FluidModel } from "../../common/model/FluidModel.js";
+import { TimeModel } from "../../common/TimeModel.js";
+import type { FluidDynamicsPreferencesModel } from "../../preferences/FluidDynamicsPreferencesModel.js";
 
 export class IntroModel implements TModel {
-  /** Shared helpers — rename SharedModel to a domain type when known. */
-  public readonly shared = new SharedModel();
+  /** Flow parameters. Only flowSpeedProperty is exposed to the learner here. */
+  public readonly fluid = new FluidModel();
 
-  /**
-   * Resets all model state to initial values.
-   * Called when the user presses the Reset All button.
-   */
+  /** Play/pause and elapsed time. Starts playing — a paused fluid shows nothing. */
+  public readonly timer = new TimeModel(true);
+
+  public constructor(preferences: FluidDynamicsPreferencesModel) {
+    // Solver accuracy is a preference rather than a screen control, so the model
+    // subscribes to it here instead of owning it.
+    this.fluid.attachSolverQuality(preferences.highQualitySolverProperty);
+  }
+
   public reset(): void {
-    this.shared.reset();
-    // TODO: call .reset() on every Property declared in this model
+    this.fluid.reset();
+    this.timer.reset();
   }
 
   /**
    * Steps the model forward by dt seconds.
-   * Called every animation frame by the Sim framework.
    *
-   * @param _dt - elapsed time in seconds since the last frame
+   * Only the clock advances here. The fluid state lives in GPU textures and is
+   * advanced by WebGPUFluidEngine from the view's step, which is the only place
+   * with access to a device — see doc/implementation-notes.md.
    */
-  public step(_dt: number): void {
-    // TODO: advance simulation state here
+  public step(dt: number): void {
+    this.timer.step(dt);
+  }
+
+  public dispose(): void {
+    this.timer.dispose();
+    this.fluid.dispose();
   }
 }

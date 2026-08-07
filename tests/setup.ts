@@ -142,15 +142,26 @@ class MockAudioContext {
 (globalThis as Record<string, unknown>)["webkitAudioContext"] = MockAudioContext;
 
 // ── patch getContext("2d") before any scenerystack import ────────────────────
-const origGetContext: typeof HTMLCanvasElement.prototype.getContext = HTMLCanvasElement.prototype.getContext;
+// Also pins getContext("webgpu") to null: happy-dom has no WebGPU, and the fluid
+// solver's unsupported path must be exercised deterministically rather than
+// depending on whatever an un-mocked happy-dom happens to return.
+//
+// `origGetContext` is narrowed to a single loose signature before delegating —
+// its real type is a large overload union (widened further by @webgpu/types),
+// and a spread argument cannot be applied to an overload union.
+type LooseGetContext = (this: HTMLCanvasElement, contextId: string, ...args: unknown[]) => unknown;
+const origGetContext = HTMLCanvasElement.prototype.getContext as unknown as LooseGetContext;
 HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, contextId: string, ...args: unknown[]) {
   if (contextId === "2d") {
     const ctx = createMockContext2D();
     (ctx as unknown as Record<string, unknown>)["canvas"] = this;
-    return ctx as unknown as ReturnType<typeof origGetContext>;
+    return ctx;
   }
-  return origGetContext.call(this, contextId, ...args) as ReturnType<typeof origGetContext>;
-} as typeof origGetContext;
+  if (contextId === "webgpu") {
+    return null;
+  }
+  return origGetContext.call(this, contextId, ...args);
+} as typeof HTMLCanvasElement.prototype.getContext;
 
 // ── SceneryStack init ────────────────────────────────────────────────────────
 import { init, madeWithSceneryStackSplashDataURI } from "scenerystack/init";

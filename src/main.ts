@@ -35,12 +35,12 @@ onReadyToLaunch(() => {
   const simPreferences = new FluidDynamicsPreferencesModel(Tandem.ROOT.createTandem("preferences"));
 
   const screens = [
-    new IntroScreen({
+    new IntroScreen(simPreferences, {
       name: stringManager.getScreenNames().introStringProperty,
       tandem: Tandem.ROOT.createTandem("introScreen"),
       backgroundColorProperty: FluidDynamicsColors.backgroundColorProperty,
     }),
-    new LabScreen({
+    new LabScreen(simPreferences, {
       name: stringManager.getScreenNames().labStringProperty,
       tandem: Tandem.ROOT.createTandem("labScreen"),
       backgroundColorProperty: FluidDynamicsColors.backgroundColorProperty,

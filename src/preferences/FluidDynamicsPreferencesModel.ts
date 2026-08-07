@@ -4,9 +4,6 @@
  * Model for the simulation-specific preferences shown in Preferences →
  * Simulation. Each preference Property takes its initial value from the
  * corresponding query parameter in fluidDynamicsQueryParameters.
- *
- * Remove the example preference (and its query parameter / UI control) if the
- * sim has no sim-specific preferences.
  */
 
 import { BooleanProperty } from "scenerystack/axon";
@@ -15,18 +12,26 @@ import FluidDynamicsNamespace from "../FluidDynamicsNamespace.js";
 import fluidDynamicsQueryParameters from "./fluidDynamicsQueryParameters.js";
 
 export class FluidDynamicsPreferencesModel {
-  /** Example preference; initial value comes from the `exampleToggle` query parameter. */
-  public readonly exampleToggleProperty: BooleanProperty;
+  /**
+   * Whether to run the higher-accuracy pressure solve.
+   *
+   * This is a cost/quality trade rather than a physics control, which is why it
+   * lives in Preferences and not on the Lab screen: more Jacobi iterations leave
+   * less residual divergence — dye holds its shape longer instead of slowly
+   * thinning — at a proportional cost in GPU time each frame. On a slower
+   * machine, leaving it off is the difference between 60 and 30 fps.
+   */
+  public readonly highQualitySolverProperty: BooleanProperty;
 
   public constructor(tandem?: Tandem) {
-    this.exampleToggleProperty = new BooleanProperty(
-      fluidDynamicsQueryParameters.exampleToggle,
-      tandem ? { tandem: tandem.createTandem("exampleToggleProperty") } : undefined,
+    this.highQualitySolverProperty = new BooleanProperty(
+      fluidDynamicsQueryParameters.highQualitySolver,
+      tandem ? { tandem: tandem.createTandem("highQualitySolverProperty") } : undefined,
     );
   }
 
   public reset(): void {
-    this.exampleToggleProperty.reset();
+    this.highQualitySolverProperty.reset();
   }
 }
 
