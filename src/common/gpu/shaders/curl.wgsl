@@ -8,11 +8,12 @@
 @group(0) @binding(0) var<uniform> u : SimUniforms;
 @group(0) @binding(1) var velocityTex : texture_2d<f32>;
 @group(0) @binding(2) var outTex : texture_storage_2d<r32float, write>;
+@group(0) @binding(6) var obstacleTex : texture_2d<f32>;
 
 fn velocityAt(cell: vec2<i32>) -> vec2<f32> {
   // Solid cells read as stationary, so the shear layer forms at the body's
   // surface rather than at the first fluid cell outside it.
-  if (isSolidCell(cell, u)) {
+  if (isSolidAt(obstacleTex, cell, u)) {
     return vec2<f32>(0.0, 0.0);
   }
   return textureLoad(velocityTex, clampCell(cell, u), 0).xy;

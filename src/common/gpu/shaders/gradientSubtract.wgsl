@@ -13,12 +13,13 @@
 @group(0) @binding(1) var velocityTex : texture_2d<f32>;
 @group(0) @binding(2) var pressureTex : texture_2d<f32>;
 @group(0) @binding(3) var outTex : texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6) var obstacleTex : texture_2d<f32>;
 
 fn pressureAt(neighbour: vec2<i32>, centre: f32) -> f32 {
   if (neighbour.x >= i32(u.gridSize.x)) {
     return 0.0;
   }
-  if (isSolidCell(neighbour, u)) {
+  if (isSolidAt(obstacleTex, neighbour, u)) {
     return centre;
   }
   let clamped = clampCell(neighbour, u);
@@ -37,7 +38,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let c = vec2<i32>(cell);
 
-  if (isSolidCell(c, u)) {
+  if (isSolidAt(obstacleTex, c, u)) {
     textureStore(outTex, cell, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     return;
   }

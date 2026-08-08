@@ -24,6 +24,8 @@ Read both before changing the solver or the Scenery ↔ WebGPU bridge.
 | `src/common/gpu/WebGPUFluidEngine.ts` | Textures, pipelines, bind groups, one frame |
 | `src/common/gpu/shaders/common.wgsl` | Uniform struct + obstacle SDF + grid helpers, prepended to every shader |
 | `src/common/gpu/FluidUniforms.ts` | CPU mirror of that struct — **must** stay in step with it |
+| `src/common/gpu/bindLayouts.ts` | Bind group layouts as plain data, checked against the WGSL by a test |
+| `src/common/gpu/solverSchedule.ts` | How many sweeps the viscous solve needs, and at what ω |
 | `src/common/view/FluidFieldNode.ts` | The Scenery ↔ WebGPU bridge |
 | `src/common/view/FluidScreenView.ts` | Layout and wiring shared by both screens |
 | `src/common/view/fluidDescription.ts` | Live a11y description, shared by field and screen summaries |
@@ -47,6 +49,19 @@ screen's model.
 field and it looks like a physics bug. `tests/FluidUniforms.test.ts` parses the
 WGSL and pins the contract — if you add a uniform, add it in both places and the
 test will tell you if you got it wrong.
+
+**Bind group layouts are shared between kernels, and unvalidated until a device
+exists.** Add a binding to a shader and you must add it to the layout in
+`FluidUniforms.ts`' neighbour `bindLayouts.ts` — `tests/ShaderBindings.test.ts`
+parses the WGSL and will tell you, in Vitest, what the GPU would only have told
+you at startup on hardware.
+
+**Nothing in a compute kernel may call `obstacleSDF()`.** The obstacle's signed
+distance is baked into a texture by `mask.wgsl` when the body moves; kernels read
+it with `isSolidAt(obstacleTex, …)`. Only `display.wgsl` still evaluates the SDF,
+because it needs sub-cell accuracy for the outline. Going back to the analytic
+call inside the pressure solve costs ~10⁸ transcendental-heavy evaluations a
+frame at the finest grid.
 
 **Load shaders with `?raw`, never `fetch()`.** The `inlineSingleFile()` plugin
 requires no runtime file fetches, and the PWA's `globPatterns` does not include
@@ -100,6 +115,8 @@ Fleet-standard Vitest layout under root `tests/`, plus a Playwright suite:
 | Path | Purpose |
 |---|---|
 | `tests/FluidUniforms.test.ts` | CPU/GPU struct layout contract |
+| `tests/ShaderBindings.test.ts` | WGSL `@binding` ↔ bind-group-layout contract |
+| `tests/solverSchedule.test.ts` | Viscous solve sweep count and relaxation factor |
 | `tests/FluidGridSpec.test.ts` | Dispatch arithmetic, square cells, uv mapping |
 | `tests/FlowRegime.test.ts` | Reynolds thresholds and boundaries |
 | `tests/FluidModel.test.ts` | Derived Re, reset, reachable regimes, shader codes |

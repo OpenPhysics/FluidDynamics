@@ -125,10 +125,6 @@ fn obstacleSDF(p: vec2<f32>, uniforms: SimUniforms) -> f32 {
   return 1.0e9;
 }
 
-fn isSolid(p: vec2<f32>, uniforms: SimUniforms) -> bool {
-  return obstacleSDF(p, uniforms) <= 0.0;
-}
-
 // ── Grid helpers ──────────────────────────────────────────────────────────────
 
 // True when the invocation is inside the grid. Dispatch sizes are rounded up to
@@ -150,12 +146,32 @@ fn uvToCell(uv: vec2<f32>, uniforms: SimUniforms) -> vec2<i32> {
   return clampCell(vec2<i32>(floor(uv * uniforms.gridSize)), uniforms);
 }
 
-fn isSolidCell(cell: vec2<i32>, uniforms: SimUniforms) -> bool {
-  let clamped = clampCell(cell, uniforms);
-  return isSolid(uvToMetres(cellToUV(vec2<u32>(clamped), uniforms), uniforms), uniforms);
-}
-
 // Cell edge length in metres, the h in every finite difference below.
 fn cellSize(uniforms: SimUniforms) -> f32 {
   return uniforms.domainSize.x / uniforms.gridSize.x;
+}
+
+// ── The baked obstacle field ──────────────────────────────────────────────────
+//
+// obstacleSDF() above is not cheap — the airfoil alone costs a sqrt, a sin, a
+// cos and a quartic — and the solver asks "is this cell solid?" up to five times
+// per cell in nearly every one of the ~50 dispatches that make up a frame. The
+// pressure solve alone accounts for most of them.
+//
+// So the distance is evaluated once per cell by mask.wgsl, whenever the obstacle
+// actually changes, and every compute kernel reads that texture instead. The
+// analytic function is still used by the display pass, which samples between
+// cells and needs sub-cell accuracy for the body's outline.
+//
+// The texture is a parameter rather than a global here because the binding is
+// declared by each kernel that needs one, and display.wgsl has none.
+
+fn obstacleDistanceAt(field: texture_2d<f32>, cell: vec2<i32>, uniforms: SimUniforms) -> f32 {
+  return textureLoad(field, clampCell(cell, uniforms), 0).x;
+}
+
+// Clamping before the lookup gives a cell outside the grid the solidity of the
+// edge cell nearest it, which is what the boundary stencils below rely on.
+fn isSolidAt(field: texture_2d<f32>, cell: vec2<i32>, uniforms: SimUniforms) -> bool {
+  return obstacleDistanceAt(field, cell, uniforms) <= 0.0;
 }

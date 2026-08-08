@@ -22,6 +22,8 @@ src/
       webgpuSupport.ts           adapter/device acquisition, device-loss reporting
       FluidGridSpec.ts           grid geometry and dispatch arithmetic
       FluidUniforms.ts           CPU mirror of the WGSL uniform struct
+      bindLayouts.ts             bind group layouts as plain, testable data
+      solverSchedule.ts          how many sweeps the viscous solve needs, and at what ω
       WebGPUFluidEngine.ts       textures, pipelines, bind groups, one frame
       shaders/*.wgsl             the solver
     view/
@@ -116,18 +118,63 @@ texture views, so **every parity combination a frame can reach is built once at
 construction** — allocating bind groups inside the frame loop is the classic way
 to make a WebGPU renderer allocate sixty times a second.
 
-Velocity advection is a MacCormack predictor–corrector, so it keeps a third
-velocity-sized scratch texture (`advectTemp`) for the predictor's φ_A: the
+Velocity and dye advection are both MacCormack predictor–correctors, so each
+keeps a scratch texture (`advectTemp`, `dyeTemp`) for the predictor's φ_A: the
 backward trace writes it, the corrector reads it and writes the limited result
-into the diffusion source. It is one allocation reused for the life of the grid.
-The dye stays on the plain backward trace — it is carried by the sharpened
-velocity and needs no scratch of its own.
+into the next field. Each is one allocation reused for the life of the grid.
 
-The pressure solve is red-black SOR. Each sweep reads one pressure texture and
-writes the other; the cells of the opposite colour are copied through verbatim,
-so a red sweep followed by a black sweep ping-pongs back to the original texture
-with the whole grid updated. The host alternates red and black, one dispatch
-each, so the per-frame dispatch count is unchanged from the old Jacobi loop.
+The `advect` layout has a fifth binding, `priorTex`, that the velocity kernels do
+not strictly need: for velocity the field being carried and the field doing the
+carrying are the same texture, so φⁿ and the trace velocity come from the same
+binding. For the dye they are different textures, and rather than give the dye
+its own layout the velocity bind groups simply point bindings 2 and 5 at the same
+view.
+
+The pressure and viscous solves are both red-black SOR. Each sweep reads one
+texture and writes the other; the cells of the opposite colour are copied through
+verbatim, so a red sweep followed by a black sweep ping-pongs back to the
+original texture with the whole grid updated — which means an even number of
+dispatches always lands back on the parity it started from. The viscous solve
+adds a `seed` entry point, a plain Jacobi sweep that fills the first iterate from
+the advected source; it is both the initial guess and the guarantee that every
+cell has been written before a red sweep starts reading neighbours.
+
+## The obstacle field is baked, not evaluated
+
+`obstacleSDF()` costs a handful of transcendentals for the airfoil, and the
+solver asks "is this cell solid?" up to five times per cell in nearly every one
+of the ~50 dispatches a frame contains — the pressure solve alone accounts for
+most of them. At 2048 × 1024 that was on the order of 10⁸ SDF evaluations per
+frame for an answer that changes only when the learner drags the body.
+
+So `mask.wgsl` writes the signed distance into an r32float texture, and every
+compute kernel reads it through the `isSolidAt` helper in `common.wgsl`. It is
+re-baked when the obstacle's shape, size or position changes, and when the grid
+is rebuilt — `WebGPUFluidEngine.markMask` does the comparison, and the dispatch
+is the first thing in the compute pass so everything downstream sees it. Within a
+compute pass each dispatch is its own usage scope, so writing the texture in one
+dispatch and sampling it in the next is legal.
+
+Two things to keep in mind. A freshly created texture reads as all zeros, which
+the solver would take for a body filling the whole channel — hence `isMaskStale`
+starts true and `createFields` sets it again. And the display pass deliberately
+does *not* use the mask: it samples between cells and needs the analytic
+function's sub-cell accuracy for the body's outline.
+
+## The bind layout contract
+
+WebGPU checks a shader's resources against its pipeline layout, but only for
+resources the entry point statically uses, only at pipeline-creation time, and
+only on a device — which in this sim means "the field turns into the
+WebGPU-unavailable message, on hardware, with one line in the console". Since
+several kernels share a layout, adding a binding to one and forgetting the layout
+is easy to do and indirect to diagnose.
+
+So the layouts are plain data in `bindLayouts.ts`, and `tests/ShaderBindings.test.ts`
+parses every `@group(0) @binding(n)` out of the WGSL and checks it against the
+layout that shader's pipelines are built with — index, kind, and storage format.
+The check is one-directional (shader ⊆ layout) because a shared layout may
+legitimately carry entries a given kernel does not use.
 
 Texture formats are chosen around filtering: velocity and dye are `rgba16float`
 because semi-Lagrangian advection wants hardware bilinear interpolation and
@@ -190,6 +237,8 @@ throws during ParallelDOM teardown. It drains a `disposers` array instead.
 | Path | What it covers |
 |---|---|
 | `tests/FluidUniforms.test.ts` | the CPU/GPU struct layout contract |
+| `tests/ShaderBindings.test.ts` | the WGSL/bind-group-layout contract |
+| `tests/solverSchedule.test.ts` | the viscous solve's sweep count and relaxation factor |
 | `tests/FluidGridSpec.test.ts` | dispatch arithmetic, square cells, uv mapping |
 | `tests/FlowRegime.test.ts` | Reynolds thresholds and their boundaries |
 | `tests/FluidModel.test.ts` | derived Re, reset, reachable regimes, shader codes |

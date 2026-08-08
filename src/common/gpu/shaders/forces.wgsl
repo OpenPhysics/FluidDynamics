@@ -16,6 +16,7 @@
 @group(0) @binding(0) var<uniform> u : SimUniforms;
 @group(0) @binding(1) var velocityTex : texture_2d<f32>;
 @group(0) @binding(2) var outTex : texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6) var obstacleTex : texture_2d<f32>;
 
 // Width of the inflow and outflow boundary strips, in cells.
 const BOUNDARY_CELLS: i32 = 2;
@@ -34,7 +35,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let width = i32(u.gridSize.x);
   let height = i32(u.gridSize.y);
 
-  if (isSolidCell(c, u)) {
+  if (isSolidAt(obstacleTex, c, u)) {
     textureStore(outTex, cell, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     return;
   }
