@@ -9,13 +9,20 @@
  * into, which FluidFieldNode blits into Scenery.
  *
  * ── One frame ─────────────────────────────────────────────────────────────────
- *   advect velocity (MacCormack: predict → correct) → diffuse (viscosity)
- *   → curl → vorticity confinement → forces & boundaries → divergence
- *   → pressure (red-black SOR ×N) → subtract pressure gradient
- *   → inject dye → advect dye → display
+ *   [bake obstacle mask, if it moved] → advect velocity (MacCormack: predict →
+ *   correct) → diffuse (viscosity, red-black SOR ×N) → curl → vorticity
+ *   confinement → forces & boundaries → divergence → pressure (red-black SOR ×N)
+ *   → subtract pressure gradient → inject dye → advect dye (MacCormack) →
+ *   display
  *
  * Every compute dispatch above is recorded into a single compute pass on a
  * single command encoder, with one queue submission per frame.
+ *
+ * Two of those counts are not fixed. The pressure sweeps come from the learner's
+ * accuracy preference. The diffusion sweeps are derived per step from the
+ * stiffness of the viscous solve — see common/gpu/solverSchedule.ts — which both
+ * cuts the count at the cheap end of the viscosity range and raises it where a
+ * fixed count used to leave the fluid less viscous than the readout claimed.
  *
  * ── Ping-pong ─────────────────────────────────────────────────────────────────
  * A shader cannot read and write the same texture, so velocity, dye and pressure
@@ -23,6 +30,14 @@
  * concrete texture views, so every combination of parities that the frame can
  * reach is built once at construction: allocating bind groups inside the frame
  * loop is the classic way to make a WebGPU renderer allocate 60 times a second.
+ *
+ * ── The obstacle mask ─────────────────────────────────────────────────────────
+ * The solver asks whether a cell is solid several times per cell in nearly every
+ * dispatch. Answering it analytically means re-evaluating the obstacle SDF —
+ * transcendentals, for the airfoil — tens of millions of times a frame for an
+ * answer that only changes when the learner moves the body. So it is baked into
+ * a texture by mask.wgsl and re-baked only when the obstacle or the grid
+ * changes.
  *
  * ── Texture formats ───────────────────────────────────────────────────────────
  * Velocity and dye are rgba16float because semi-Lagrangian advection wants
@@ -35,11 +50,18 @@
 import {
   CHANNEL_HEIGHT_M,
   CHANNEL_WIDTH_M,
-  DIFFUSION_ITERATIONS,
-  DIFFUSION_SKIP_ALPHA,
   DISPLAY_CANVAS_HEIGHT,
   DISPLAY_CANVAS_WIDTH,
 } from "../../FluidDynamicsConstants.js";
+import {
+  BIND_LAYOUTS,
+  type BindingSpec,
+  type BindLayoutName,
+  type BindLayoutSpec,
+  OBSTACLE_BINDING,
+  SCALAR_FORMAT,
+  VELOCITY_FORMAT,
+} from "./bindLayouts.js";
 import type { FluidGridSpec } from "./FluidGridSpec.js";
 import { FluidUniforms, type FluidUniformValues, UNIFORM_BUFFER_SIZE } from "./FluidUniforms.js";
 import advectWGSL from "./shaders/advect.wgsl?raw";
@@ -51,11 +73,10 @@ import divergenceWGSL from "./shaders/divergence.wgsl?raw";
 import dyeWGSL from "./shaders/dye.wgsl?raw";
 import forcesWGSL from "./shaders/forces.wgsl?raw";
 import gradientSubtractWGSL from "./shaders/gradientSubtract.wgsl?raw";
+import maskWGSL from "./shaders/mask.wgsl?raw";
 import pressureWGSL from "./shaders/pressure.wgsl?raw";
 import vorticityWGSL from "./shaders/vorticity.wgsl?raw";
-
-const VELOCITY_FORMAT: GPUTextureFormat = "rgba16float";
-const SCALAR_FORMAT: GPUTextureFormat = "r32float";
+import { diffusionAlpha, diffusionSweeps } from "./solverSchedule.js";
 
 /** Everything step() needs that is not derived from the grid. */
 export type FluidStepValues = Omit<FluidUniformValues, "domainWidth" | "domainHeight" | "dt"> & {
@@ -133,10 +154,30 @@ export class WebGPUFluidEngine {
    */
   private advectTemp!: GPUTexture;
   private advectTempView!: GPUTextureView;
+  /** The same scratch role, for the dye's MacCormack corrector. */
+  private dyeTemp!: GPUTexture;
+  private dyeTempView!: GPUTextureView;
   private divergence!: GPUTexture;
   private divergenceView!: GPUTextureView;
   private curl!: GPUTexture;
   private curlView!: GPUTextureView;
+  /**
+   * The obstacle's signed distance, one value per cell, written by mask.wgsl.
+   * Read by every kernel that needs to know where the body is.
+   */
+  private obstacle!: GPUTexture;
+  private obstacleView!: GPUTextureView;
+
+  /**
+   * Set whenever the baked obstacle field no longer matches the parameters, so
+   * the next frame re-bakes it before anything reads it. Starts true because a
+   * freshly created texture reads as all-zero, which would be a body filling the
+   * entire channel.
+   */
+  private isMaskStale = true;
+
+  /** The obstacle the mask was last baked for. */
+  private maskedObstacle = { shape: Number.NaN, radius: Number.NaN, x: Number.NaN, y: Number.NaN };
 
   private pipelines!: Pipelines;
   private bindGroups!: BindGroups;
@@ -262,12 +303,12 @@ export class WebGPUFluidEngine {
     );
 
     const encoder = this.device.createCommandEncoder({ label: "fluid-frame" });
-    // α = νΔt/h² is the diffusion solve's stiffness. Below DIFFUSION_SKIP_ALPHA
-    // the sweep is numerically the identity, so only the seeding dispatch runs.
-    // See the constant's doc for why this is effectively a paused-path guard.
-    const h = this.grid.cellSize;
-    const diffuseAlpha = (values.viscosity * dt) / (h * h);
-    this.recordCompute(encoder, values.pressureIterations, diffuseAlpha >= DIFFUSION_SKIP_ALPHA);
+    // How stiff the viscous solve is this step decides how many sweeps it gets;
+    // zero on the paused path, where every sweep is the identity and only the
+    // seeding dispatch is needed.
+    const sweeps = diffusionSweeps(diffusionAlpha(values.viscosity, dt, this.grid.cellSize));
+    this.markMask(values);
+    this.recordCompute(encoder, values.pressureIterations, sweeps);
     this.recordDisplay(encoder);
     if (this.presentToCanvas) {
       encoder.copyTextureToTexture({ texture: this.displayTexture }, { texture: this.context.getCurrentTexture() }, [
@@ -354,7 +395,30 @@ export class WebGPUFluidEngine {
 
   // ── Frame recording ─────────────────────────────────────────────────────────
 
-  private recordCompute(encoder: GPUCommandEncoder, pressureIterations: number, runDiffusion: boolean): void {
+  /**
+   * Notes whether the baked obstacle field still describes the obstacle the
+   * caller is asking for. Cheap enough to do every frame, and it means dragging
+   * the body costs one dispatch while leaving it alone costs none.
+   */
+  private markMask(values: FluidStepValues): void {
+    const previous = this.maskedObstacle;
+    if (
+      previous.shape !== values.obstacleShape ||
+      previous.radius !== values.obstacleRadius ||
+      previous.x !== values.obstacleCenterX ||
+      previous.y !== values.obstacleCenterY
+    ) {
+      this.isMaskStale = true;
+      this.maskedObstacle = {
+        shape: values.obstacleShape,
+        radius: values.obstacleRadius,
+        x: values.obstacleCenterX,
+        y: values.obstacleCenterY,
+      };
+    }
+  }
+
+  private recordCompute(encoder: GPUCommandEncoder, pressureIterations: number, viscousSweeps: number): void {
     const pass = encoder.beginComputePass({ label: "fluid-solver" });
     const x = this.grid.dispatchX;
     const y = this.grid.dispatchY;
@@ -366,22 +430,29 @@ export class WebGPUFluidEngine {
       pass.dispatchWorkgroups(x, y);
     };
 
+    // 0. Bake the obstacle field, if it has moved. Must come first: everything
+    //    below reads it. Within a compute pass each dispatch is its own usage
+    //    scope, so writing it here and sampling it two dispatches later is fine.
+    if (this.isMaskStale) {
+      dispatch(this.pipelines.mask, bg.mask);
+      this.isMaskStale = false;
+    }
+
     // 1. Advect velocity: backward trace into the MacCormack scratch texture
     //    (φ_A), then the corrector writes the limited, anti-diffused velocity
     //    into velocitySource, which the diffusion solve reads from.
     dispatch(this.pipelines.advectVelocity, bg.advectVelocity[this.velocity.parity]);
     dispatch(this.pipelines.advectVelocityCorrect, bg.advectVelocityCorrect[this.velocity.parity]);
 
-    // 2. Viscous diffusion. The first sweep seeds the iterate from the advected
-    //    source; the rest ping-pong. Skipped near the identity (α ≈ 0), where
-    //    the seeding sweep alone already holds the unchanged field.
-    dispatch(this.pipelines.diffuse, bg.diffuseSeed);
+    // 2. Viscous diffusion. The seeding dispatch fills the iterate from the
+    //    advected source; the red-black SOR sweeps then alternate colours, one
+    //    dispatch each, so a red/black pair is one full Gauss–Seidel iteration
+    //    and an even count lands back on the parity it started from.
+    dispatch(this.pipelines.diffuseSeed, bg.diffuseSeed);
     this.velocity.parity = 0;
-    if (runDiffusion) {
-      for (let i = 1; i < DIFFUSION_ITERATIONS; i++) {
-        dispatch(this.pipelines.diffuse, bg.diffuse[this.velocity.parity]);
-        this.velocity.swap();
-      }
+    for (let i = 0; i < viscousSweeps * 2; i++) {
+      dispatch(i % 2 === 0 ? this.pipelines.diffuseRed : this.pipelines.diffuseBlack, bg.diffuse[this.velocity.parity]);
+      this.velocity.swap();
     }
 
     // 3-4. Restore the small-scale vorticity advection dissipated.
@@ -407,10 +478,14 @@ export class WebGPUFluidEngine {
     dispatch(this.pipelines.gradientSubtract, bg.gradientSubtract[this.velocity.parity][this.pressure.parity]);
     this.velocity.swap();
 
-    // 9-10. Dye: inject at the inflow, then carry it with the finished velocity.
+    // 9-11. Dye: inject at the inflow, then carry it with the finished velocity
+    //       — through the same MacCormack predictor–corrector the velocity gets,
+    //       because the dye is what the learner actually looks at and a plain
+    //       backward trace smears the bands out well before the far wall.
     dispatch(this.pipelines.injectDye, bg.injectDye[this.dye.parity]);
     this.dye.swap();
     dispatch(this.pipelines.advectDye, bg.advectDye[this.velocity.parity][this.dye.parity]);
+    dispatch(this.pipelines.advectDyeCorrect, bg.advectDyeCorrect[this.velocity.parity][this.dye.parity]);
     this.dye.swap();
 
     pass.end();
@@ -462,6 +537,25 @@ export class WebGPUFluidEngine {
     });
     this.advectTempView = this.advectTemp.createView();
 
+    this.dyeTemp = device.createTexture({
+      label: "dye-temp",
+      size: [grid.width, grid.height],
+      format: VELOCITY_FORMAT,
+      usage: storageAndSample,
+    });
+    this.dyeTempView = this.dyeTemp.createView();
+
+    this.obstacle = device.createTexture({
+      label: "obstacle-field",
+      size: [grid.width, grid.height],
+      format: SCALAR_FORMAT,
+      usage: storageAndSample,
+    });
+    this.obstacleView = this.obstacle.createView();
+    // A new texture reads as zero, which the solver would take for "solid
+    // everywhere". Nothing may read it before mask.wgsl has filled it in.
+    this.isMaskStale = true;
+
     this.divergence = device.createTexture({
       label: "divergence",
       size: [grid.width, grid.height],
@@ -487,6 +581,8 @@ export class WebGPUFluidEngine {
     this.pressure.destroy();
     this.velocitySource.destroy();
     this.advectTemp.destroy();
+    this.dyeTemp.destroy();
+    this.obstacle.destroy();
     this.divergence.destroy();
     this.curl.destroy();
   }
@@ -496,6 +592,8 @@ export class WebGPUFluidEngine {
     const layouts = this.pipelines.layouts;
     const uniform: GPUBindGroupEntry = { binding: 0, resource: { buffer: this.uniformBuffer } };
     const sampler: GPUBindGroupEntry = { binding: 1, resource: this.linearSampler };
+    /** Bound to every compute layout, whether or not the kernel reads it. */
+    const obstacle: GPUBindGroupEntry = { binding: OBSTACLE_BINDING, resource: this.obstacleView };
 
     const velocityViews = this.velocity.views;
     const dyeViews = this.dye.views;
@@ -508,6 +606,8 @@ export class WebGPUFluidEngine {
     const perParity = <T>(build: (parity: 0 | 1) => T): [T, T] => [build(0), build(1)];
 
     return {
+      mask: group(layouts.mask, [uniform, { binding: 1, resource: this.obstacleView }]),
+
       // Predicts φ_A: backward-advects velocity by itself into the scratch texture.
       advectVelocity: perParity((p) =>
         group(layouts.advect, [
@@ -516,12 +616,14 @@ export class WebGPUFluidEngine {
           { binding: 2, resource: velocityViews[p] },
           { binding: 3, resource: velocityViews[p] },
           { binding: 4, resource: this.advectTempView },
+          { binding: 5, resource: velocityViews[p] },
+          obstacle,
         ]),
       ),
 
-      // MacCormack corrector: reads φ^n + the trace velocity from velocity, φ_A
-      // from the scratch texture, and writes the corrected velocity to the
-      // diffusion source. velocityTex and sourceTex share the advect layout.
+      // MacCormack corrector: traces with φⁿ (binding 2), reads φ_A from the
+      // scratch texture (binding 3) and φⁿ itself again (binding 5), and writes
+      // the corrected velocity to the diffusion source.
       advectVelocityCorrect: perParity((p) =>
         group(layouts.advect, [
           uniform,
@@ -529,15 +631,18 @@ export class WebGPUFluidEngine {
           { binding: 2, resource: velocityViews[p] },
           { binding: 3, resource: this.advectTempView },
           { binding: 4, resource: this.velocitySourceView },
+          { binding: 5, resource: velocityViews[p] },
+          obstacle,
         ]),
       ),
 
-      // First diffusion sweep: iterate seeded from the source itself.
+      // Seeding dispatch: iterate seeded from the advected source itself.
       diffuseSeed: group(layouts.twoInRGBA, [
         uniform,
         { binding: 1, resource: this.velocitySourceView },
         { binding: 2, resource: this.velocitySourceView },
         { binding: 3, resource: velocityViews[0] },
+        obstacle,
       ]),
 
       diffuse: perParity((p) =>
@@ -546,6 +651,7 @@ export class WebGPUFluidEngine {
           { binding: 1, resource: this.velocitySourceView },
           { binding: 2, resource: velocityViews[p] },
           { binding: 3, resource: velocityViews[p === 0 ? 1 : 0] },
+          obstacle,
         ]),
       ),
 
@@ -554,6 +660,7 @@ export class WebGPUFluidEngine {
           uniform,
           { binding: 1, resource: velocityViews[p] },
           { binding: 2, resource: this.curlView },
+          obstacle,
         ]),
       ),
 
@@ -563,6 +670,7 @@ export class WebGPUFluidEngine {
           { binding: 1, resource: velocityViews[p] },
           { binding: 2, resource: this.curlView },
           { binding: 3, resource: velocityViews[p === 0 ? 1 : 0] },
+          obstacle,
         ]),
       ),
 
@@ -571,6 +679,7 @@ export class WebGPUFluidEngine {
           uniform,
           { binding: 1, resource: velocityViews[p] },
           { binding: 2, resource: velocityViews[p === 0 ? 1 : 0] },
+          obstacle,
         ]),
       ),
 
@@ -579,6 +688,7 @@ export class WebGPUFluidEngine {
           uniform,
           { binding: 1, resource: velocityViews[p] },
           { binding: 2, resource: this.divergenceView },
+          obstacle,
         ]),
       ),
 
@@ -588,6 +698,7 @@ export class WebGPUFluidEngine {
           { binding: 1, resource: pressureViews[p] },
           { binding: 2, resource: this.divergenceView },
           { binding: 3, resource: pressureViews[p === 0 ? 1 : 0] },
+          obstacle,
         ]),
       ),
 
@@ -598,6 +709,7 @@ export class WebGPUFluidEngine {
             { binding: 1, resource: velocityViews[v] },
             { binding: 2, resource: pressureViews[p] },
             { binding: 3, resource: velocityViews[v === 0 ? 1 : 0] },
+            obstacle,
           ]),
         ),
       ),
@@ -607,9 +719,11 @@ export class WebGPUFluidEngine {
           uniform,
           { binding: 1, resource: dyeViews[d] },
           { binding: 2, resource: dyeViews[d === 0 ? 1 : 0] },
+          obstacle,
         ]),
       ),
 
+      // Dye predictor: traced by the finished velocity, into the dye scratch.
       advectDye: perParity((v) =>
         perParity((d) =>
           group(layouts.advect, [
@@ -617,7 +731,25 @@ export class WebGPUFluidEngine {
             sampler,
             { binding: 2, resource: velocityViews[v] },
             { binding: 3, resource: dyeViews[d] },
+            { binding: 4, resource: this.dyeTempView },
+            { binding: 5, resource: dyeViews[d] },
+            obstacle,
+          ]),
+        ),
+      ),
+
+      // Dye corrector: unlike the velocity's, the field being carried and the
+      // field doing the carrying are different textures — hence binding 5.
+      advectDyeCorrect: perParity((v) =>
+        perParity((d) =>
+          group(layouts.advect, [
+            uniform,
+            sampler,
+            { binding: 2, resource: velocityViews[v] },
+            { binding: 3, resource: this.dyeTempView },
             { binding: 4, resource: dyeViews[d === 0 ? 1 : 0] },
+            { binding: 5, resource: dyeViews[d] },
+            obstacle,
           ]),
         ),
       ),
@@ -657,22 +789,18 @@ export class WebGPUFluidEngine {
 
 // ── Pipeline construction ─────────────────────────────────────────────────────
 
-type Layouts = {
-  readonly advect: GPUBindGroupLayout;
-  readonly twoInRGBA: GPUBindGroupLayout;
-  readonly oneInRGBA: GPUBindGroupLayout;
-  readonly oneInScalar: GPUBindGroupLayout;
-  readonly mixedRGBA: GPUBindGroupLayout;
-  readonly twoInScalar: GPUBindGroupLayout;
-  readonly display: GPUBindGroupLayout;
-};
+type Layouts = { readonly [K in BindLayoutName]: GPUBindGroupLayout };
 
 type Pipelines = {
   readonly layouts: Layouts;
+  readonly mask: GPUComputePipeline;
   readonly advectVelocity: GPUComputePipeline;
   readonly advectVelocityCorrect: GPUComputePipeline;
   readonly advectDye: GPUComputePipeline;
-  readonly diffuse: GPUComputePipeline;
+  readonly advectDyeCorrect: GPUComputePipeline;
+  readonly diffuseSeed: GPUComputePipeline;
+  readonly diffuseRed: GPUComputePipeline;
+  readonly diffuseBlack: GPUComputePipeline;
   readonly curl: GPUComputePipeline;
   readonly vorticity: GPUComputePipeline;
   readonly forces: GPUComputePipeline;
@@ -685,6 +813,7 @@ type Pipelines = {
 };
 
 type BindGroups = {
+  readonly mask: GPUBindGroup;
   readonly advectVelocity: [GPUBindGroup, GPUBindGroup];
   readonly advectVelocityCorrect: [GPUBindGroup, GPUBindGroup];
   readonly diffuseSeed: GPUBindGroup;
@@ -697,97 +826,45 @@ type BindGroups = {
   readonly gradientSubtract: [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]];
   readonly injectDye: [GPUBindGroup, GPUBindGroup];
   readonly advectDye: [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]];
+  readonly advectDyeCorrect: [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]];
   readonly display: [
     [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]],
     [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]],
   ];
 };
 
-const COMPUTE = GPUShaderStage.COMPUTE;
-const FRAGMENT = GPUShaderStage.FRAGMENT;
+/** The half of a layout entry that says what kind of resource is bound. */
+function layoutResource(binding: BindingSpec): Omit<GPUBindGroupLayoutEntry, "binding" | "visibility"> {
+  if (binding.kind === "uniform") {
+    return { buffer: { type: "uniform" } };
+  }
+  if (binding.kind === "sampler") {
+    return { sampler: { type: "filtering" } };
+  }
+  if (binding.kind === "texture") {
+    return { texture: { sampleType: binding.sampleType } };
+  }
+  return { storageTexture: { access: "write-only", format: binding.format } };
+}
 
-const uniformEntry = (visibility: number): GPUBindGroupLayoutEntry => ({
-  binding: 0,
-  visibility,
-  buffer: { type: "uniform" },
-});
+/** Turns one of the plain-data layout specs in bindLayouts.ts into a real one. */
+function createLayout(device: GPUDevice, spec: BindLayoutSpec): GPUBindGroupLayout {
+  const visibility = spec.stage === "compute" ? GPUShaderStage.COMPUTE : GPUShaderStage.FRAGMENT;
 
-const filterable = (binding: number, visibility: number): GPUBindGroupLayoutEntry => ({
-  binding,
-  visibility,
-  texture: { sampleType: "float" },
-});
-
-/**
- * r32float is not guaranteed filterable, so pressure, divergence and curl must
- * be declared unfilterable and read with textureLoad.
- */
-const unfilterable = (binding: number, visibility: number): GPUBindGroupLayoutEntry => ({
-  binding,
-  visibility,
-  texture: { sampleType: "unfilterable-float" },
-});
-
-const storageOut = (binding: number, format: GPUTextureFormat): GPUBindGroupLayoutEntry => ({
-  binding,
-  visibility: COMPUTE,
-  storageTexture: { access: "write-only", format },
-});
+  return device.createBindGroupLayout({
+    label: spec.label,
+    entries: Object.entries(spec.bindings).map(([index, binding]) => ({
+      binding: Number(index),
+      visibility,
+      ...layoutResource(binding),
+    })),
+  });
+}
 
 function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pipelines {
-  const layouts: Layouts = {
-    advect: device.createBindGroupLayout({
-      label: "advect",
-      entries: [
-        uniformEntry(COMPUTE),
-        { binding: 1, visibility: COMPUTE, sampler: { type: "filtering" } },
-        filterable(2, COMPUTE),
-        filterable(3, COMPUTE),
-        storageOut(4, VELOCITY_FORMAT),
-      ],
-    }),
-    twoInRGBA: device.createBindGroupLayout({
-      label: "two-in-rgba",
-      entries: [uniformEntry(COMPUTE), filterable(1, COMPUTE), filterable(2, COMPUTE), storageOut(3, VELOCITY_FORMAT)],
-    }),
-    oneInRGBA: device.createBindGroupLayout({
-      label: "one-in-rgba",
-      entries: [uniformEntry(COMPUTE), filterable(1, COMPUTE), storageOut(2, VELOCITY_FORMAT)],
-    }),
-    oneInScalar: device.createBindGroupLayout({
-      label: "one-in-scalar",
-      entries: [uniformEntry(COMPUTE), filterable(1, COMPUTE), storageOut(2, SCALAR_FORMAT)],
-    }),
-    mixedRGBA: device.createBindGroupLayout({
-      label: "mixed-rgba",
-      entries: [
-        uniformEntry(COMPUTE),
-        filterable(1, COMPUTE),
-        unfilterable(2, COMPUTE),
-        storageOut(3, VELOCITY_FORMAT),
-      ],
-    }),
-    twoInScalar: device.createBindGroupLayout({
-      label: "two-in-scalar",
-      entries: [
-        uniformEntry(COMPUTE),
-        unfilterable(1, COMPUTE),
-        unfilterable(2, COMPUTE),
-        storageOut(3, SCALAR_FORMAT),
-      ],
-    }),
-    display: device.createBindGroupLayout({
-      label: "display",
-      entries: [
-        uniformEntry(FRAGMENT),
-        { binding: 1, visibility: FRAGMENT, sampler: { type: "filtering" } },
-        filterable(2, FRAGMENT),
-        filterable(3, FRAGMENT),
-        unfilterable(4, FRAGMENT),
-        unfilterable(5, FRAGMENT),
-      ],
-    }),
-  };
+  const layouts = Object.fromEntries(
+    Object.entries(BIND_LAYOUTS).map(([name, spec]) => [name, createLayout(device, spec)]),
+  ) as Layouts;
 
   // WGSL has no include mechanism, so the shared struct and helpers are
   // concatenated ahead of every shader.
@@ -805,11 +882,14 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
   const advectLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts.advect] });
   const pressureModule = module("pressure", pressureWGSL);
   const pressureLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts.twoInScalar] });
+  const diffuseModule = module("diffuse", diffuseWGSL);
+  const diffuseLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts.twoInRGBA] });
 
   const displayModule = module("display", displayWGSL);
 
   return {
     layouts,
+    mask: compute("mask", layouts.mask, maskWGSL, "main"),
     advectVelocity: device.createComputePipeline({
       label: "advect-velocity",
       layout: advectLayout,
@@ -825,7 +905,26 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
       layout: advectLayout,
       compute: { module: advectModule, entryPoint: "advectDye" },
     }),
-    diffuse: compute("diffuse", layouts.twoInRGBA, diffuseWGSL, "main"),
+    advectDyeCorrect: device.createComputePipeline({
+      label: "advect-dye-correct",
+      layout: advectLayout,
+      compute: { module: advectModule, entryPoint: "advectDyeCorrect" },
+    }),
+    diffuseSeed: device.createComputePipeline({
+      label: "diffuse-seed",
+      layout: diffuseLayout,
+      compute: { module: diffuseModule, entryPoint: "seed" },
+    }),
+    diffuseRed: device.createComputePipeline({
+      label: "diffuse-red",
+      layout: diffuseLayout,
+      compute: { module: diffuseModule, entryPoint: "solveRed" },
+    }),
+    diffuseBlack: device.createComputePipeline({
+      label: "diffuse-black",
+      layout: diffuseLayout,
+      compute: { module: diffuseModule, entryPoint: "solveBlack" },
+    }),
     curl: compute("curl", layouts.oneInScalar, curlWGSL, "main"),
     vorticity: compute("vorticity", layouts.mixedRGBA, vorticityWGSL, "main"),
     forces: compute("forces", layouts.oneInRGBA, forcesWGSL, "main"),

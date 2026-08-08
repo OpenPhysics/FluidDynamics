@@ -17,6 +17,7 @@
 @group(0) @binding(1) var velocityTex : texture_2d<f32>;
 @group(0) @binding(2) var curlTex : texture_2d<f32>;
 @group(0) @binding(3) var outTex : texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6) var obstacleTex : texture_2d<f32>;
 
 fn curlAt(cell: vec2<i32>) -> f32 {
   return textureLoad(curlTex, clampCell(cell, u), 0).x;
@@ -31,7 +32,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let velocity = textureLoad(velocityTex, vec2<i32>(cell), 0).xy;
 
-  if (isSolidCell(vec2<i32>(cell), u)) {
+  if (isSolidAt(obstacleTex, vec2<i32>(cell), u)) {
     textureStore(outTex, cell, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     return;
   }

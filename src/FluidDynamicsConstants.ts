@@ -98,9 +98,9 @@ export const DISPLAY_CANVAS_HEIGHT = 1024;
 export const WORKGROUP_SIZE = 8;
 
 /**
- * Jacobi iterations for the pressure Poisson solve. Below ~20 the velocity field
- * retains visible divergence (dye compresses and thins); above ~40 the cost is
- * real and the improvement is not visible.
+ * Red-black SOR sweeps for the pressure Poisson solve. Below ~20 the velocity
+ * field retains visible divergence (dye compresses and thins); above ~40 the
+ * cost is real and the improvement is not visible.
  */
 export const PRESSURE_ITERATIONS_DEFAULT = 30;
 
@@ -109,8 +109,24 @@ export const PRESSURE_ITERATIONS_HIGH = 50;
 
 export const PRESSURE_ITERATIONS_RANGE = new Range(1, 200);
 
-/** Jacobi iterations for the implicit viscous diffusion solve. */
-export const DIFFUSION_ITERATIONS = 12;
+/**
+ * Ceiling on the red-black SOR iterations spent on the implicit viscous solve.
+ * Each one is a red dispatch and a black dispatch.
+ *
+ * The count itself is derived per step from α = νΔt/h² (see
+ * `common/gpu/solverSchedule.ts`); this only bounds the stiffest corner of the
+ * parameter space — the finest grid at the top of the viscosity slider — where
+ * the required count runs into the hundreds and the flow is creeping anyway.
+ */
+export const DIFFUSION_SWEEPS_MAX = 12;
+
+/**
+ * Error the viscous solve is iterated down to, as a fraction of the error its
+ * initial guess starts with. 10⁻³ is far below the point where a difference is
+ * visible in the dye, and it is what makes the *displayed* viscosity the one the
+ * fluid actually feels.
+ */
+export const DIFFUSION_RESIDUAL_TOLERANCE = 1e-3;
 
 /**
  * Below this diffusion coefficient α = νΔt/h², the implicit diffusion sweep is
@@ -248,7 +264,8 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   PRESSURE_ITERATIONS_DEFAULT,
   PRESSURE_ITERATIONS_HIGH,
   PRESSURE_ITERATIONS_RANGE,
-  DIFFUSION_ITERATIONS,
+  DIFFUSION_SWEEPS_MAX,
+  DIFFUSION_RESIDUAL_TOLERANCE,
   DIFFUSION_SKIP_ALPHA,
   MAX_PHYSICS_DT,
   MAX_SUBSTEPS_PER_FRAME,
