@@ -6,8 +6,6 @@ street to a turbulent wake — solved in real time on the GPU.
 Built with [SceneryStack](https://scenerystack.org/), Vite 8, TypeScript 7 and
 Biome 2.
 
-## The simulation
-
 Dye is injected in bands at the left edge of a channel and carried past a body in
 the middle. Raising the flow speed (or lowering the viscosity) raises the
 Reynolds number, and the wake changes character: attached and symmetric below
@@ -21,10 +19,8 @@ shown beneath the field.
   (dye, speed, vorticity, pressure). Drag anywhere in the channel to push the
   fluid and add dye.
 
-## Requirements
-
-**WebGPU.** The solver is Jos Stam's *Stable Fluids* running entirely in WGSL
-compute shaders — there is no CPU fallback. Recent Chrome, Edge and Safari
+**WebGPU required.** The solver is Jos Stam's *Stable Fluids* running entirely in
+WGSL compute shaders — there is no CPU fallback. Recent Chrome, Edge and Safari
 support it. Where it is unavailable the sim boots normally and shows a message in
 place of the field.
 
