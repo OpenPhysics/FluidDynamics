@@ -1,5 +1,7 @@
 # Fluid Dynamics
 
+[![CI](https://github.com/OpenPhysics/FluidDynamics/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenPhysics/FluidDynamics/actions/workflows/ci.yml)
+
 Flow past an obstacle, from smooth laminar streamlines to a Kármán vortex
 street to a turbulent wake — solved in real time on the GPU.
 
