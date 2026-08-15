@@ -54,7 +54,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   // ── Outflow: zero gradient, so vortices convect out instead of reflecting ───
   if (c.x >= width - BOUNDARY_CELLS) {
-    velocity = textureLoad(velocityTex, vec2<i32>(width - BOUNDARY_CELLS - 1, c.y), 0).xy;
+    let interior = textureLoad(velocityTex, vec2<i32>(width - BOUNDARY_CELLS - 1, c.y), 0).xy;
+    // The channel empties into a reservoir at reference pressure — the pressure
+    // solve pins p = 0 past this edge — and a reservoir does not push back. A
+    // plain zero-gradient copy would re-import any transient reversal at the
+    // outlet and feed it back into the channel, so the copied axial velocity is
+    // clamped to point downstream.
+    velocity = vec2<f32>(max(interior.x, 0.0), interior.y);
   }
 
   // ── Free-slip walls: no flow through, but no drag along ─────────────────────

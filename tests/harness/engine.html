@@ -77,6 +77,12 @@
           return Array.from(bytes);
         },
 
+        /** u,v pairs in m/s for the whole grid, plus its size. */
+        async velocity() {
+          const uv = await engine.readVelocity();
+          return { width: engine.gridSpec.width, height: engine.gridSpec.height, uv: Array.from(uv) };
+        },
+
         reset() { engine.reset(); },
         dispose() { engine.dispose(); engine = null; },
       };

@@ -72,6 +72,7 @@ type Harness = {
   start: (resolution?: string) => Promise<{ ok: boolean; reason?: string; format?: string }>;
   run: (steps: number, dt: number, overrides?: Record<string, unknown>) => { running: boolean; time: number };
   pixels: () => Promise<number[]>;
+  velocity: () => Promise<{ width: number; height: number; uv: number[] }>;
   reset: () => void;
   dispose: () => void;
 };
@@ -243,5 +244,84 @@ test.describe("WebGPU fluid engine", () => {
     for (const v of [0.25, 0.35, 0.65, 0.75]) {
       expect(Math.abs(frame.brightness(0.5, v) - centre), `uniform at v=${v}`).toBeLessThan(20);
     }
+  });
+
+  test("changing the flow speed never reverses the outflow", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // The outflow boundary models a reservoir the channel empties into: fluid
+    // may leave, but the reservoir never pushes it back in. Reversal at the
+    // right edge after a speed change is what a step change of the Dirichlet
+    // inflow used to do here: the incompressible pressure solve answered
+    // globally and instantly, and the transient reflected off the p = 0 outflow
+    // until the whole column sloshes backward at up to several times the *old*
+    // speed. The inflow ramp (inflowRamp.ts), the settling pressure boost, and
+    // the outflow's downstream clamp exist to prevent exactly that, so this
+    // test measures the velocity field itself — the rendered frame encodes
+    // speed but not direction — as the most negative u in the rightmost band of
+    // the channel, sampled through the second after the slider jumps.
+    type VelocityField = { width: number; height: number; uv: number[] };
+
+    const sample = async (): Promise<VelocityField> => page.evaluate(() => window.harness.velocity());
+
+    // Deliberately not render(): this test reads the velocity field, not the
+    // frame, and skipping the 8 MB pixel readback per burst is what keeps it
+    // inside the suite's time budget on a software adapter.
+    const runSteps = async (steps: number, overrides: Record<string, unknown>): Promise<void> => {
+      const status = await page.evaluate(
+        ([s, o]) => window.harness.run(s as number, 1 / 60, o as Record<string, unknown>),
+        [steps, overrides] as const,
+      );
+      expect(status.running, "the device survived the run").toBe(true);
+    };
+
+    const minimumOutflowU = (field: VelocityField): number => {
+      let minimum = Infinity;
+      for (let y = 0; y < field.height; y++) {
+        for (let x = field.width - 12; x < field.width; x++) {
+          minimum = Math.min(minimum, field.uv[2 * (y * field.width + x)] ?? 0);
+        }
+      }
+      return minimum;
+    };
+
+    /** Solver steps after the jump at which the outflow is sampled. */
+    const SAMPLES = [4, 12, 30, 70];
+
+    /**
+     * Develops a flow at `from` m/s, then jumps the inflow to `to` m/s and
+     * reports the worst reversal in the outflow band over the next ~1.2 s —
+     * the window in which the unfixed solver's backward slosh peaked.
+     */
+    const jump = async (from: number, to: number, obstacleShape: number, warmup: number): Promise<number> => {
+      await page.evaluate(() => window.harness.reset());
+      await runSteps(warmup, { inflowSpeed: from, viscosity: 1e-3, obstacleShape });
+
+      let worst = minimumOutflowU(await sample());
+      let at = 0;
+      for (const target of SAMPLES) {
+        await runSteps(target - at, { inflowSpeed: to, viscosity: 1e-3, obstacleShape });
+        at = target;
+        worst = Math.min(worst, minimumOutflowU(await sample()));
+      }
+      return worst;
+    };
+
+    // With no obstacle in the channel any leftward velocity is a pure boundary
+    // artifact. With the cylinder, shed vortices crossing the outlet plane
+    // legitimately carry patches of backward flow, so the tolerance is looser —
+    // but nothing like the several m/s of backward slosh the unfixed solver
+    // produced on the slow-down, which is the case this test exists for.
+    const bareUp = await jump(0.3, 3, 0, 150);
+    const bareDown = await jump(3, 0.3, 0, 150);
+    const cylinderDown = await jump(3, 0.3, 1, 240);
+
+    expect(bareUp, "no reversal after speeding up").toBeGreaterThan(-0.3);
+    expect(bareDown, "no reversal after slowing down").toBeGreaterThan(-0.3);
+    expect(cylinderDown, "no unphysical reversal past the cylinder after slowing down").toBeGreaterThan(-1.0);
   });
 });

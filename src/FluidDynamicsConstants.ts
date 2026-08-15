@@ -159,6 +159,22 @@ export const FLOW_SPEED_RANGE = new Range(0.05, 3);
 export const FLOW_SPEED_DEFAULT = 0.6;
 
 /**
+ * Time constant, in seconds, of the exponential ramp the inflow boundary
+ * follows when the speed slider moves.
+ *
+ * The inflow is a Dirichlet condition, and an incompressible projection answers
+ * a step change instantly and globally: the pressure solve tilts the whole
+ * channel to reconcile the new inlet flux with the momentum the fluid already
+ * has, and when that transient reaches the p = 0 outflow it reflects and drives
+ * the flow there into reverse — the whole column sloshes backward at up to
+ * several times the *old* speed. Real channel flow cannot change its momentum
+ * in one frame either, so the boundary is given the same inertia: the solver
+ * approaches the slider's value exponentially, reaching 95 % of any change in
+ * ~1.8 s. Readouts (Reynolds number, regime) still track the slider directly.
+ */
+export const FLOW_SPEED_RESPONSE_TIME = 0.6;
+
+/**
  * Kinematic viscosity ν, in m²/s. The range brackets the interesting Reynolds
  * numbers for the default obstacle: at U = 1 m/s and D = 0.15 m, ν = 3e-4 gives
  * Re = 500 and ν = 1e-1 gives Re = 1.5. Combined with the speed range, the whole
@@ -271,6 +287,7 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   MAX_SUBSTEPS_PER_FRAME,
   FLOW_SPEED_RANGE,
   FLOW_SPEED_DEFAULT,
+  FLOW_SPEED_RESPONSE_TIME,
   VISCOSITY_RANGE,
   VISCOSITY_DEFAULT,
   OBSTACLE_DIAMETER_RANGE,

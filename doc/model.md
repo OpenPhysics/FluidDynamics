@@ -142,13 +142,30 @@ fine. Cells are square at every resolution.
 
 | Boundary | Condition |
 |---|---|
-| Inflow (left) | **u** = (*U*, small perturbation) |
-| Outflow (right) | ∂**u**/∂x = 0, *p* = 0 |
+| Inflow (left) | **u** = (*U*(t), small perturbation), where *U*(t) ramps toward the slider |
+| Outflow (right) | ∂**u**/∂x = 0 with *u*ₓ ≥ 0 (no re-entry), *p* = 0 |
 | Top and bottom walls | free slip: *v* = 0, *u* unconstrained |
 | Obstacle surface | no slip: **u** = 0; ∂p/∂n = 0 |
 
 The Neumann pressure condition on the obstacle is what makes the body solid. Left
 out, the projection pushes fluid straight through it and no wake forms at all.
+
+**Why the inflow ramps.** The inflow is a Dirichlet condition and the projection
+is incompressible, which together make a step change of speed singularly
+unphysical: the pressure solve answers globally and instantly, and the transient
+reflects off the *p* = 0 outflow hard enough to drive the whole column backward
+at up to several times the *old* speed (measured at −2.2 m/s for a bare channel
+dropping from 3 m/s to 0.3). The solver therefore approaches the slider's value
+exponentially with time constant `FLOW_SPEED_RESPONSE_TIME`, which is the
+inertia a real channel's inlet has; readouts still track the slider directly.
+While the inflow is settling, the pressure solve is run at its high sweep count,
+because an under-converged projection is what over-drains the channel's momentum
+through the outflow and rings it into reverse. The outflow strip, in turn, never
+copies a backward axial velocity into the channel: the *p* = 0 condition models
+a reservoir at reference pressure, and a reservoir does not push back. Together
+these hold the worst reversal of the same 3 → 0.3 drop to −0.08 m/s (bare
+channel) and −0.34 m/s (with a shedding wake), where shed vortices crossing the
+outflow plane legitimately carry patches of backward flow.
 
 ## Simplifications and assumptions
 

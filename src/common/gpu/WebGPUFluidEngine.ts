@@ -52,6 +52,7 @@ import {
   CHANNEL_WIDTH_M,
   DISPLAY_CANVAS_HEIGHT,
   DISPLAY_CANVAS_WIDTH,
+  PRESSURE_ITERATIONS_HIGH,
 } from "../../FluidDynamicsConstants.js";
 import {
   BIND_LAYOUTS,
@@ -64,6 +65,7 @@ import {
 } from "./bindLayouts.js";
 import type { FluidGridSpec } from "./FluidGridSpec.js";
 import { FluidUniforms, type FluidUniformValues, UNIFORM_BUFFER_SIZE } from "./FluidUniforms.js";
+import { advanceInflowRamp, type InflowRampState, isInflowSettling } from "./inflowRamp.js";
 import advectWGSL from "./shaders/advect.wgsl?raw";
 import commonWGSL from "./shaders/common.wgsl?raw";
 import curlWGSL from "./shaders/curl.wgsl?raw";
@@ -95,7 +97,9 @@ class PingPong {
     const descriptor: GPUTextureDescriptor = {
       size: [grid.width, grid.height],
       format,
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+      // COPY_SRC so the engine integration test can read the velocity field
+      // back; unused by the solver itself.
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     };
     this.textures = [
       device.createTexture({ ...descriptor, label: `${label}0` }),
@@ -107,6 +111,11 @@ class PingPong {
   /** Records that the field was just written, so read and write swap. */
   public swap(): void {
     this.parity = this.parity === 0 ? 1 : 0;
+  }
+
+  /** The texture holding the field's current value, for readback paths. */
+  public get currentTexture(): GPUTexture {
+    return this.textures[this.parity];
   }
 
   public destroy(): void {
@@ -194,6 +203,16 @@ export class WebGPUFluidEngine {
 
   /** Staging buffer for readDisplayPixels, allocated on first use. */
   private readbackBuffer: GPUBuffer | null = null;
+
+  /** Staging buffer for readVelocity, reallocated when the grid changes size. */
+  private velocityReadbackBuffer: GPUBuffer | null = null;
+
+  /**
+   * Where the inflow boundary's ramp toward the slider's speed stands, or null
+   * before the first step (and after a reset, where the field at rest is
+   * consistent with any inflow). See inflowRamp.ts.
+   */
+  private inflowRamp: InflowRampState | null = null;
 
   private isDisposed = false;
   private hasFailed = false;
@@ -296,10 +315,33 @@ export class WebGPUFluidEngine {
       return;
     }
 
+    // The inflow boundary approaches the requested speed rather than following
+    // it instantly; see inflowRamp.ts for why a step change is unphysical here.
+    this.inflowRamp = advanceInflowRamp(this.inflowRamp, values.inflowSpeed, dt);
+
+    // While the inflow is settling, the projection gets the high-accuracy sweep
+    // count: an under-converged pressure solve is what turns the settling into
+    // a backward slosh at the outflow (measured in the engine integration test).
+    // Not on the paused path — a dt of zero advances nothing, so the extra
+    // sweeps would only make re-render frames more expensive.
+    const pressureIterations =
+      dt > 0 && isInflowSettling(this.inflowRamp)
+        ? Math.max(values.pressureIterations, PRESSURE_ITERATIONS_HIGH)
+        : values.pressureIterations;
+
     this.device.queue.writeBuffer(
       this.uniformBuffer,
       0,
-      this.uniforms.pack({ ...values, dt, domainWidth: CHANNEL_WIDTH_M, domainHeight: CHANNEL_HEIGHT_M }, this.grid),
+      this.uniforms.pack(
+        {
+          ...values,
+          dt,
+          inflowSpeed: this.inflowRamp.applied,
+          domainWidth: CHANNEL_WIDTH_M,
+          domainHeight: CHANNEL_HEIGHT_M,
+        },
+        this.grid,
+      ),
     );
 
     const encoder = this.device.createCommandEncoder({ label: "fluid-frame" });
@@ -308,7 +350,7 @@ export class WebGPUFluidEngine {
     // seeding dispatch is needed.
     const sweeps = diffusionSweeps(diffusionAlpha(values.viscosity, dt, this.grid.cellSize));
     this.markMask(values);
-    this.recordCompute(encoder, values.pressureIterations, sweeps);
+    this.recordCompute(encoder, pressureIterations, sweeps);
     this.recordDisplay(encoder);
     if (this.presentToCanvas) {
       encoder.copyTextureToTexture({ texture: this.displayTexture }, { texture: this.context.getCurrentTexture() }, [
@@ -361,6 +403,52 @@ export class WebGPUFluidEngine {
     return tight;
   }
 
+  /**
+   * Reads the velocity field back as u,v pairs in m/s, row-major from the
+   * bottom (texture row 0 is grid y = 0).
+   *
+   * The solver-side counterpart of readDisplayPixels, for the same consumer: the
+   * engine integration test. The rendered frame encodes speed but not direction,
+   * so questions like "is the outflow ever reversed?" can only be answered from
+   * the field itself. The velocity texture is rgba16float, so the half-float
+   * pairs are decoded on the CPU. Not used on the rendering path: like the
+   * display readback, a full copy stalls the pipeline.
+   */
+  public async readVelocity(): Promise<Float32Array> {
+    const width = this.grid.width;
+    const height = this.grid.height;
+    // rgba16float: four half-precision channels, 8 bytes per cell.
+    const bytesPerRow = Math.ceil((width * 8) / 256) * 256;
+    const size = bytesPerRow * height;
+
+    if (this.velocityReadbackBuffer === null || this.velocityReadbackBuffer.size !== size) {
+      this.velocityReadbackBuffer?.destroy();
+      this.velocityReadbackBuffer = this.device.createBuffer({
+        label: "velocity-readback",
+        size,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+    }
+    const buffer = this.velocityReadbackBuffer;
+
+    const encoder = this.device.createCommandEncoder({ label: "velocity-readback" });
+    encoder.copyTextureToBuffer({ texture: this.velocity.currentTexture }, { buffer, bytesPerRow }, [width, height]);
+    this.device.queue.submit([encoder.finish()]);
+
+    await buffer.mapAsync(GPUMapMode.READ);
+    const padded = new Uint8Array(buffer.getMappedRange().slice(0));
+    buffer.unmap();
+
+    const uv = new Float32Array(width * height * 2);
+    const padding = bytesPerRow - width * 8;
+    for (let cell = 0; cell < width * height; cell++) {
+      const i = cell * 8 + Math.floor(cell / width) * padding;
+      uv[2 * cell] = decodeHalfFloat((padded[i] ?? 0) | ((padded[i + 1] ?? 0) << 8));
+      uv[2 * cell + 1] = decodeHalfFloat((padded[i + 2] ?? 0) | ((padded[i + 3] ?? 0) << 8));
+    }
+    return uv;
+  }
+
   /** Clears the fluid state back to a channel at rest with no dye. */
   public reset(): void {
     if (!this.isRunning) {
@@ -370,6 +458,7 @@ export class WebGPUFluidEngine {
     // resources read as zero, which saves a clear kernel and two more layouts.
     this.destroyFields();
     this.createFields();
+    this.inflowRamp = null;
   }
 
   /** Switches the solver to a different grid, discarding the current state. */
@@ -380,6 +469,7 @@ export class WebGPUFluidEngine {
     this.destroyFields();
     this.grid = grid;
     this.createFields();
+    this.inflowRamp = null;
   }
 
   public dispose(): void {
@@ -390,6 +480,7 @@ export class WebGPUFluidEngine {
     this.destroyFields();
     this.displayTexture.destroy();
     this.readbackBuffer?.destroy();
+    this.velocityReadbackBuffer?.destroy();
     this.uniformBuffer.destroy();
   }
 
@@ -953,4 +1044,18 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
       primitive: { topology: "triangle-list" },
     }),
   };
+}
+
+/** Decodes one IEEE 754 half-precision float, as stored in rgba16float textures. */
+function decodeHalfFloat(bits: number): number {
+  const sign = (bits & 0x8000) === 0 ? 1 : -1;
+  const exponent = (bits >> 10) & 0x1f;
+  const fraction = bits & 0x03ff;
+  if (exponent === 0) {
+    return sign * fraction * 2 ** -24;
+  }
+  if (exponent === 0x1f) {
+    return fraction === 0 ? sign * Infinity : Number.NaN;
+  }
+  return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
