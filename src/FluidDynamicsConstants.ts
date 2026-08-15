@@ -232,13 +232,19 @@ export const POINTER_RADIUS_M = 0.08;
 /**
  * Fraction of dye remaining after one second.
  *
- * Close to 1 because dye has to survive its whole trip down the channel: at the
- * slowest inflow speed that trip takes more than ten seconds, and anything much
- * below 0.99 leaves the downstream half of the field black just where the wake
- * is most interesting. Its real job is to clear away dye the learner injected
- * with the pointer, not to fade the inflow bands.
+ * The range runs the full span from "dye never fades" to "dye obviously fades",
+ * because a control the learner cannot see working is not a control. Dye
+ * crosses the channel in under a second at the fastest inflow speeds and more
+ * than ten at the slowest, so a narrow range near 1 — the original 0.9 to 1 —
+ * changed what reached the far wall by only a few percent, and even
+ * pointer-painted dye advected away long before a 10 %-per-second fade could
+ * act on it.
+ *
+ * The default stays at 0.99: the inflow bands are the main visualization, and
+ * they should survive to the far wall unless the learner deliberately asks for
+ * faster fading by moving the slider down.
  */
-export const DYE_DISSIPATION_RANGE = new Range(0.9, 1);
+export const DYE_DISSIPATION_RANGE = new Range(0.1, 1);
 export const DYE_DISSIPATION_DEFAULT = 0.99;
 
 // ── Flow-regime thresholds (Reynolds number, dimensionless) ───────────────────
