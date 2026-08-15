@@ -69,7 +69,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
 
   // ── Pointer impulse ─────────────────────────────────────────────────────────
-  if (u.pointerActive > 0.5) {
+  // A paused frame still submits a live pointer (dye.wgsl injects at dt = 0),
+  // but an impulse is a velocity and dividing the per-frame delta by a timestep
+  // the frame does not have is meaningless — the epsilon below would turn a
+  // 5 mm drag into 5000 m/s, every paused frame, until the half-float field
+  // overflows to NaN. So the impulse only exists when time is advancing.
+  if (u.pointerActive > 0.5 && u.dt > 0.0) {
     let d = p - u.pointerPos;
     // Gaussian falloff, so the impulse has no hard edge to shed spurious vorticity from.
     let falloff = exp(-dot(d, d) / (u.pointerRadius * u.pointerRadius));

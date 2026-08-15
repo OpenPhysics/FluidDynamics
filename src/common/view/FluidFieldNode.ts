@@ -162,6 +162,11 @@ export class FluidFieldNode extends CanvasNode {
       // Paused: still re-render, so switching visualization mode or dragging the
       // obstacle updates the picture instead of freezing on a stale frame.
       engine.step(0, this.stepValues());
+      // Consume the pointer delta, as the playing branch does after its first
+      // substep. The impulse is skipped at dt = 0 (forces.wgsl), but a delta
+      // left over from a drag made while paused would otherwise fire as a
+      // phantom push on the first frame after resuming.
+      this.pointerDelta = Vector2.ZERO;
     }
 
     this.invalidatePaint();

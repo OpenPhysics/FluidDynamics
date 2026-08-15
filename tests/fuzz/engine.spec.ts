@@ -324,4 +324,97 @@ test.describe("WebGPU fluid engine", () => {
     expect(bareDown, "no reversal after slowing down").toBeGreaterThan(-0.3);
     expect(cylinderDown, "no unphysical reversal past the cylinder after slowing down").toBeGreaterThan(-1.0);
   });
+
+  test("dragging while paused paints dye without disturbing the velocity field", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // FluidFieldNode keeps submitting frames while the sim is paused, with
+    // dt = 0 and whatever pointer state the last drag event left behind. Dye
+    // injection is position-driven and must keep working; the velocity impulse
+    // divides the per-frame delta by dt, which a paused frame does not have.
+    // Before forces.wgsl skipped the impulse at dt = 0, a 5 mm drag held for a
+    // second while paused injected ~5000 m/s on every frame, overflowed the
+    // half-float velocity field to NaN, and left the whole grid permanently
+    // non-finite once the sim resumed — invisible until play was pressed,
+    // because dt = 0 also freezes the dye.
+    type VelocityField = { width: number; height: number; uv: number[] };
+
+    const runSteps = async (steps: number, dt: number, overrides: Record<string, unknown>): Promise<void> => {
+      const status = await page.evaluate(
+        ([s, d, o]) => window.harness.run(s as number, d as number, o as Record<string, unknown>),
+        [steps, dt, overrides] as const,
+      );
+      expect(status.running, "the device survived the run").toBe(true);
+    };
+
+    const sampleVelocity = (): Promise<VelocityField> => page.evaluate(() => window.harness.velocity());
+
+    const stats = (field: VelocityField): { maxSpeed: number; nonFinite: number } => {
+      let maxSpeed = 0;
+      let nonFinite = 0;
+      for (let i = 0; i < field.uv.length; i += 2) {
+        const u = field.uv[i] ?? 0;
+        const v = field.uv[i + 1] ?? 0;
+        if (!(Number.isFinite(u) && Number.isFinite(v))) {
+          nonFinite++;
+        } else {
+          maxSpeed = Math.max(maxSpeed, Math.hypot(u, v));
+        }
+      }
+      return { maxSpeed, nonFinite };
+    };
+
+    await runSteps(240, 1 / 60, { inflowSpeed: 1 });
+    const before = stats(await sampleVelocity());
+    expect(before.nonFinite, "the flowing field is finite").toBe(0);
+
+    const beforeFrame = new Frame(await page.evaluate(() => window.harness.pixels()), format);
+
+    // The paused branch of update(): one 5 mm drag, then the pointer held
+    // still for 60 re-render frames at dt = 0.
+    await runSteps(60, 0, {
+      pointerActive: true,
+      pointerX: 1.4,
+      pointerY: 0.55,
+      pointerDeltaX: 0.005,
+      pointerDeltaY: 0,
+    });
+
+    const afterPaused = stats(await sampleVelocity());
+    expect(afterPaused.nonFinite, "a paused drag injects no non-finite velocity").toBe(0);
+    // Small drift from the projection re-converging is fine; the unfixed
+    // impulse left a ~20 km/s jet here.
+    expect(afterPaused.maxSpeed, "a paused drag adds no impulse").toBeLessThan(before.maxSpeed + 0.5);
+
+    // The drag must still have painted dye under the pointer — the only thing
+    // a dt = 0 frame is allowed to change. Count sampled pixels that moved by
+    // more than a band's worth of colour anywhere in the frame: with the
+    // pointer disc spanning ~160 px, thousands of samples change when the
+    // injection works and only the inflow strip's re-mix (colour-identical at
+    // a frozen time) when it does not.
+    const afterFrame = new Frame(await page.evaluate(() => window.harness.pixels()), format);
+    let changed = 0;
+    for (let i = 0; i <= WIDTH; i += 2) {
+      for (let j = 0; j <= HEIGHT; j += 2) {
+        const u = i / WIDTH;
+        const v = j / HEIGHT;
+        const a = beforeFrame.at(u, v);
+        const b = afterFrame.at(u, v);
+        if (Math.abs(a.r - b.r) > 40 || Math.abs(a.g - b.g) > 40 || Math.abs(a.b - b.b) > 40) {
+          changed++;
+        }
+      }
+    }
+    expect(changed, "dye was injected at the pointer while paused").toBeGreaterThan(300);
+
+    // And resuming must inherit a healthy field, not a delayed explosion.
+    await runSteps(60, 1 / 60, {});
+    const afterResume = stats(await sampleVelocity());
+    expect(afterResume.nonFinite, "the field is still finite a second after resuming").toBe(0);
+    expect(afterResume.maxSpeed, "no lingering explosion after resuming").toBeLessThan(5);
+  });
 });
