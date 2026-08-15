@@ -24,6 +24,7 @@ import {
   OBSTACLE_CENTER_DEFAULT,
   OBSTACLE_DIAMETER_DEFAULT,
   OBSTACLE_DIAMETER_RANGE,
+  obstacleDragBounds,
   PRESSURE_ITERATIONS_DEFAULT,
   PRESSURE_ITERATIONS_HIGH,
   PRESSURE_ITERATIONS_RANGE,
@@ -74,6 +75,7 @@ export class FluidModel {
 
   private isDisposed = false;
   private detachSolverQuality: (() => void) | null = null;
+  private detachResizeClamp: (() => void) | null = null;
 
   public constructor() {
     this.flowSpeedProperty = new NumberProperty(FLOW_SPEED_DEFAULT, {
@@ -114,6 +116,19 @@ export class FluidModel {
     );
 
     this.flowRegimeProperty = new DerivedProperty([this.reynoldsNumberProperty], (re) => classifyFlowRegime(re));
+
+    // Dragging constrains the centre to where the current body fits (see
+    // ObstacleHandleNode), but resizing can strand a body somewhere it no
+    // longer fits: growing it with the slider while parked near a wall would
+    // push the edge through the wall. So a diameter change re-clamps the
+    // centre, sliding the body inward as it grows.
+    const resizeListener = (diameter: number): void => {
+      this.obstacleCenterProperty.value = obstacleDragBounds(diameter).getConstrainedPoint(
+        this.obstacleCenterProperty.value,
+      );
+    };
+    this.obstacleDiameterProperty.link(resizeListener);
+    this.detachResizeClamp = () => this.obstacleDiameterProperty.unlink(resizeListener);
   }
 
   /**
@@ -170,6 +185,8 @@ export class FluidModel {
 
     this.detachSolverQuality?.();
     this.detachSolverQuality = null;
+    this.detachResizeClamp?.();
+    this.detachResizeClamp = null;
     this.flowRegimeProperty.dispose();
     this.reynoldsNumberProperty.dispose();
     this.pressureIterationsProperty.dispose();

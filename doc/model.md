@@ -21,10 +21,10 @@ group those combine into, which is why it is displayed next to the flow.
 | ω | vorticity, ∂v/∂x − ∂u/∂y | 1/s | — |
 | *U* | inflow speed | m/s | 0.05 – 3 |
 | ν | kinematic viscosity | m²/s | 3×10⁻⁴ – 10⁻¹ |
-| *D* | obstacle diameter | m | 0.05 – 0.35 |
+| *D* | obstacle diameter | m | 0.05 – 0.8 |
 | *L* × *H* | channel size | m | 2 × 1 |
 | *h* | grid cell size | m | 1/128 (standard), 1/256 (fine), 1/512 (very fine), 1/1024 (ultra fine) |
-| Re | Reynolds number, *UD*/ν | — | ≈0.08 – 3500 |
+| Re | Reynolds number, *UD*/ν | — | ≈0.08 – 8000 |
 
 Density is not a separate quantity: it is constant, and dividing the momentum
 equation through by it leaves the kinematic viscosity and a pressure in m²/s.

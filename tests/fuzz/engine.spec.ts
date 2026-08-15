@@ -230,6 +230,61 @@ test.describe("WebGPU fluid engine", () => {
     }
   });
 
+  test("the largest obstacle the size slider allows leaves the solver finite", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // The top of the size slider nearly blocks the channel: a 0.8 m body in a
+    // 1 m one forces the whole inflow through two 0.1 m gaps, where continuity
+    // accelerates it well past the free-stream speed. That is real physics
+    // (the Venturi effect), but it is also the stiffest geometry the slider can
+    // ask for, so the velocity field must stay finite and the device alive —
+    // for every shape, since each spans the flow differently at that size.
+    // The centre is the one the model's resize clamp would pick: pinned near
+    // mid-height, the only place the largest body fits.
+    type VelocityField = { width: number; height: number; uv: number[] };
+
+    const runSteps = async (steps: number, overrides: Record<string, unknown>): Promise<void> => {
+      const status = await page.evaluate(
+        ([s, o]) => window.harness.run(s as number, 1 / 60, o as Record<string, unknown>),
+        [steps, overrides] as const,
+      );
+      expect(status.running, "the device survived the run").toBe(true);
+    };
+
+    for (const obstacleShape of [1, 2, 3]) {
+      await page.evaluate(() => window.harness.reset());
+      await runSteps(240, {
+        inflowSpeed: 1,
+        obstacleShape,
+        obstacleRadius: 0.4,
+        obstacleCenterX: 0.5,
+        obstacleCenterY: 0.5,
+      });
+
+      const field: VelocityField = await page.evaluate(() => window.harness.velocity());
+      let maxSpeed = 0;
+      let nonFinite = 0;
+      for (let i = 0; i < field.uv.length; i += 2) {
+        const u = field.uv[i] ?? 0;
+        const v = field.uv[i + 1] ?? 0;
+        if (!(Number.isFinite(u) && Number.isFinite(v))) {
+          nonFinite++;
+        } else {
+          maxSpeed = Math.max(maxSpeed, Math.hypot(u, v));
+        }
+      }
+
+      expect(nonFinite, `shape ${obstacleShape} keeps the velocity field finite`).toBe(0);
+      // Venturi peaks of several times the inflow are expected in the gaps;
+      // tens of m/s would mean the projection has lost its grip.
+      expect(maxSpeed, `shape ${obstacleShape} shows no runaway acceleration`).toBeLessThan(20);
+    }
+  });
+
   test("with no obstacle the flow stays uniform across the channel", async ({ page }) => {
     const format = await startEngine(page);
     test.skip(format === null, "no WebGPU adapter available");

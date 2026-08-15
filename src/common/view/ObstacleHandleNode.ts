@@ -13,12 +13,12 @@
  * obstacle from being read as a press on the fluid.
  */
 
-import { Multilink, type NumberProperty, Property } from "scenerystack/axon";
-import type { Bounds2, Vector2Property } from "scenerystack/dot";
+import { DerivedProperty, Multilink, type NumberProperty } from "scenerystack/axon";
+import type { Vector2Property } from "scenerystack/dot";
 import { type EmptySelfOptions, optionize } from "scenerystack/phet-core";
 import type { ModelViewTransform2 } from "scenerystack/phetcommon";
 import { Circle, type CircleOptions, DragListener, KeyboardDragListener } from "scenerystack/scenery";
-import { OBSTACLE_DRAG_BOUNDS_M, OBSTACLE_KEYBOARD_SPEED_MPS } from "../../FluidDynamicsConstants.js";
+import { OBSTACLE_KEYBOARD_SPEED_MPS, obstacleDragBounds } from "../../FluidDynamicsConstants.js";
 import { StringManager } from "../../i18n/StringManager.js";
 
 export type ObstacleHandleNodeOptions = CircleOptions;
@@ -52,8 +52,9 @@ export class ObstacleHandleNode extends Circle {
     // Keeping the obstacle clear of the inflow, outflow and walls is a physical
     // constraint, not a cosmetic one: a body overlapping the inflow strip would
     // fight the boundary condition that forces the velocity there, and one
-    // against a wall has no room for a wake.
-    const dragBoundsProperty = new Property<Bounds2 | null>(OBSTACLE_DRAG_BOUNDS_M);
+    // against a wall has no room for a wake. A larger body is legal in fewer
+    // places, so the region shrinks as the size slider rises.
+    const dragBoundsProperty = new DerivedProperty([diameterProperty], obstacleDragBounds);
 
     const positionListener = Multilink.multilink([centerProperty, diameterProperty], (centre, diameter) => {
       this.center = modelViewTransform.modelToViewPosition(centre);

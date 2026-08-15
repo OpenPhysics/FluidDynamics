@@ -2,6 +2,7 @@
  * Tests for the shared flow-parameter model.
  */
 
+import { Vector2 } from "scenerystack/dot";
 import { describe, expect, it } from "vitest";
 import { FLOW_REGIMES } from "../src/common/model/FlowRegime.js";
 import { FluidModel } from "../src/common/model/FluidModel.js";
@@ -11,6 +12,9 @@ import {
   FLOW_SPEED_DEFAULT,
   FLOW_SPEED_RANGE,
   OBSTACLE_DIAMETER_DEFAULT,
+  OBSTACLE_DIAMETER_RANGE,
+  OBSTACLE_DRAG_BOUNDS_M,
+  obstacleDragBounds,
   VISCOSITY_DEFAULT,
   VISCOSITY_RANGE,
 } from "../src/FluidDynamicsConstants.js";
@@ -77,6 +81,21 @@ describe("FluidModel", () => {
     model.dispose();
   });
 
+  it("pulls the obstacle away from the walls when it grows past where it fits", () => {
+    const model = new FluidModel();
+    // Parked at the bottom-left corner of the drag region, legal at the default
+    // size but not for a body near the top of the slider.
+    model.obstacleCenterProperty.value = new Vector2(0.25, 0.25);
+
+    model.obstacleDiameterProperty.value = OBSTACLE_DIAMETER_RANGE.max;
+
+    const bounds = obstacleDragBounds(OBSTACLE_DIAMETER_RANGE.max);
+    expect(model.obstacleCenterProperty.value.x).toBeCloseTo(bounds.minX, 12);
+    expect(model.obstacleCenterProperty.value.y).toBeCloseTo(bounds.minY, 12);
+
+    model.dispose();
+  });
+
   it("restores every Property on reset", () => {
     const model = new FluidModel();
     const initialRe = model.reynoldsNumberProperty.value;
@@ -103,6 +122,30 @@ describe("FluidModel", () => {
     expect(model.reynoldsNumberProperty.value).toBeCloseTo(initialRe, 12);
 
     model.dispose();
+  });
+});
+
+describe("obstacle drag bounds", () => {
+  it("leaves the region the original size range allowed untouched", () => {
+    // 0.35 m was the top of the first shipped slider; every body it allowed
+    // sees exactly the bounds it always had.
+    for (const diameter of [OBSTACLE_DIAMETER_RANGE.min, OBSTACLE_DIAMETER_DEFAULT, 0.35]) {
+      expect(obstacleDragBounds(diameter).equalsEpsilon(OBSTACLE_DRAG_BOUNDS_M, 1e-9), `D=${diameter}`).toBe(true);
+    }
+  });
+
+  it("shrinks the region as the body grows, but never empties it", () => {
+    for (let diameter = OBSTACLE_DIAMETER_RANGE.min; diameter <= OBSTACLE_DIAMETER_RANGE.max; diameter += 0.01) {
+      const bounds = obstacleDragBounds(diameter);
+      expect(bounds.minX, `D=${diameter}`).toBeLessThanOrEqual(bounds.maxX);
+      expect(bounds.minY, `D=${diameter}`).toBeLessThanOrEqual(bounds.maxY);
+    }
+
+    // The largest body pins near mid-height — the only place with room for it.
+    const largest = obstacleDragBounds(OBSTACLE_DIAMETER_RANGE.max);
+    expect(largest.minY).toBeGreaterThan(OBSTACLE_DRAG_BOUNDS_M.minY);
+    expect(largest.maxY).toBeLessThan(OBSTACLE_DRAG_BOUNDS_M.maxY);
+    expect(largest.minY).toBeLessThan(largest.maxY);
   });
 });
 

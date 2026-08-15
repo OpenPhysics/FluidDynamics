@@ -189,8 +189,17 @@ export const FLOW_SPEED_RESPONSE_TIME = 0.6;
 export const VISCOSITY_RANGE = new Range(3e-4, 1e-1);
 export const VISCOSITY_DEFAULT = 1e-3;
 
-/** Obstacle diameter D, in metres — the length scale in Re = U·D/ν. */
-export const OBSTACLE_DIAMETER_RANGE = new Range(0.05, 0.35);
+/**
+ * Obstacle diameter D, in metres — the length scale in Re = U·D/ν.
+ *
+ * The top of the range is sized for the airfoil, which needs the headroom
+ * most: its chord equals D and its thickness is only 12 % of that, so at any
+ * slider setting the wing is the visually smallest of the three bodies. At
+ * D = 0.8 the chord spans 40 % of the 2 m channel, while the cylinder and
+ * plate at the same setting span 80 % of its height, leaving Venturi gaps at
+ * the walls.
+ */
+export const OBSTACLE_DIAMETER_RANGE = new Range(0.05, 0.8);
 export const OBSTACLE_DIAMETER_DEFAULT = 0.15;
 
 /**
@@ -201,13 +210,43 @@ export const OBSTACLE_DIAMETER_DEFAULT = 0.15;
 export const OBSTACLE_CENTER_DEFAULT = new Vector2(0.5, 0.5);
 
 /**
- * Where the obstacle's centre may be dragged, in metres.
+ * Where the obstacle's centre may be when the body is small, in metres — the
+ * loosest case; obstacleDragBounds() tightens this region as the body grows.
  *
  * Clear of the inflow strip on the left (a body overlapping it would fight the
  * boundary condition that forces the velocity there), clear of the outflow on
  * the right, and clear of both walls so there is always room for a wake.
  */
 export const OBSTACLE_DRAG_BOUNDS_M = new Bounds2(0.25, 0.25, 1.2, 0.75);
+
+/**
+ * Closest the obstacle's edge may come to a wall, the inflow or the outflow,
+ * in metres. Not arbitrary: the static drag bounds above were sized for bodies
+ * up to 0.35 m, and 0.25 − 0.35/2 = 0.075 — so every size the original slider
+ * allowed keeps exactly the region it always had, and only larger bodies feel
+ * the tightening.
+ */
+export const OBSTACLE_CLEARANCE_M = 0.075;
+
+/**
+ * The region the obstacle's centre may occupy for a body of the given
+ * diameter: the static bounds above, shrunk on each side by the body's radius
+ * plus OBSTACLE_CLEARANCE_M, so the edge itself stays clear of the walls and
+ * both flow boundaries.
+ *
+ * Non-empty for every diameter in OBSTACLE_DIAMETER_RANGE — the largest body
+ * pins near mid-height with a gap at each wall. A unit test pins both that and
+ * the sizes the original slider allowed seeing no change.
+ */
+export function obstacleDragBounds(diameter: number): Bounds2 {
+  const edge = diameter / 2 + OBSTACLE_CLEARANCE_M;
+  return new Bounds2(
+    Math.max(OBSTACLE_DRAG_BOUNDS_M.minX, edge),
+    Math.max(OBSTACLE_DRAG_BOUNDS_M.minY, edge),
+    Math.min(OBSTACLE_DRAG_BOUNDS_M.maxX, CHANNEL_WIDTH_M - edge),
+    Math.min(OBSTACLE_DRAG_BOUNDS_M.maxY, CHANNEL_HEIGHT_M - edge),
+  );
+}
 
 /** How fast a held arrow key moves the obstacle, in metres per second. */
 export const OBSTACLE_KEYBOARD_SPEED_MPS = 0.4;
@@ -300,6 +339,8 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   OBSTACLE_DIAMETER_DEFAULT,
   OBSTACLE_CENTER_DEFAULT,
   OBSTACLE_DRAG_BOUNDS_M,
+  OBSTACLE_CLEARANCE_M,
+  obstacleDragBounds,
   OBSTACLE_KEYBOARD_SPEED_MPS,
   VORTICITY_RANGE,
   VORTICITY_DEFAULT,
