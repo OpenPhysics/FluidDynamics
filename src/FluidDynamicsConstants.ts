@@ -302,6 +302,68 @@ export const POINTER_RADIUS_M = 0.08;
 export const DYE_DISSIPATION_RANGE = new Range(0.1, 1);
 export const DYE_DISSIPATION_DEFAULT = 0.99;
 
+// ── Measurement tools (tape and ruler) ────────────────────────────────────────
+
+/**
+ * Where the measuring tape's base and tip sit when it is first taken out or
+ * Reset All runs, in metres from the channel's lower-left corner. The default
+ * span (≈ 0.67 m across the lower half of the channel) is long enough that the
+ * readout is obviously live from the first drag, and clear of the default
+ * obstacle at (0.5, 0.5) so the tape never spawns underneath it.
+ */
+export const TAPE_BASE_DEFAULT = new Vector2(0.5, 0.35);
+export const TAPE_TIP_DEFAULT = new Vector2(1.1, 0.55);
+
+/**
+ * Where the ruler's centre sits when it is first taken out or Reset All runs,
+ * in metres. Near the top of the channel: the interesting lengths to measure —
+ * the body and its wake — live in and below the middle, so the ruler starts
+ * parked out of their way.
+ */
+export const RULER_POSITION_DEFAULT = new Vector2(0.5, 0.78);
+
+/** Length of the ruler, in metres. One metre spans half the channel — enough to measure the full channel height. */
+export const RULER_LENGTH_M = 1;
+
+/** Distance between labelled ticks, in metres. 0.1 m = 35 px at the field's scale, wide enough for two-digit labels. */
+export const RULER_MAJOR_TICK_M = 0.1;
+
+/** Minor ticks per major tick. Five puts a minor tick every 2 cm. */
+export const RULER_MINOR_TICKS_PER_MAJOR = 5;
+
+/** Ruler body height, in screen pixels. */
+export const RULER_HEIGHT_PX = 50;
+
+/** Space between the ruler's ends and its first and last tick, in screen pixels. */
+export const RULER_INSETS_PX = 10;
+
+/** How fast a held arrow key moves the ruler, in metres per second. Matches the obstacle's keyboard speed. */
+export const RULER_KEYBOARD_SPEED_MPS = 0.4;
+
+/**
+ * Closest a tool's grab point may come to the edge of the screen, in metres.
+ * Keeps the tape's crosshairs and the ruler's centre reachable rather than
+ * pinned under the window edge.
+ */
+export const TOOL_DRAG_MARGIN_M = 0.06;
+
+/**
+ * Extra slack around the toolbox panel, in screen pixels, within which ending
+ * a tool drag still counts as putting the tool back.
+ */
+export const TOOLBOX_RETURN_TOLERANCE_PX = 10;
+
+/**
+ * Where the tape appears relative to the pointer that took it out, in screen
+ * pixels (negative y is up). Keeps the tape's base and its readout clear of
+ * the toolbox icon, so a second press on the icon — the put-back path —
+ * reaches the icon instead of the freshly spawned tape.
+ */
+export const TAPE_TAKEOUT_OFFSET_PX = new Vector2(30, -60);
+
+/** Horizontal gap between the toolbox's icons, in screen pixels. */
+export const TOOLBOX_ICON_SPACING = 12;
+
 // ── Flow-regime thresholds (Reynolds number, dimensionless) ───────────────────
 // Classical transition values for flow past a circular cylinder. See
 // FlowRegime.ts for how they are applied and doc/model.md for their limits.
@@ -365,6 +427,19 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   POINTER_RADIUS_M,
   DYE_DISSIPATION_RANGE,
   DYE_DISSIPATION_DEFAULT,
+  TAPE_BASE_DEFAULT,
+  TAPE_TIP_DEFAULT,
+  RULER_POSITION_DEFAULT,
+  RULER_LENGTH_M,
+  RULER_MAJOR_TICK_M,
+  RULER_MINOR_TICKS_PER_MAJOR,
+  RULER_HEIGHT_PX,
+  RULER_INSETS_PX,
+  RULER_KEYBOARD_SPEED_MPS,
+  TOOL_DRAG_MARGIN_M,
+  TOOLBOX_RETURN_TOLERANCE_PX,
+  TAPE_TAKEOUT_OFFSET_PX,
+  TOOLBOX_ICON_SPACING,
   RE_SEPARATION,
   RE_SHEDDING_ONSET,
   RE_TURBULENT_ONSET,

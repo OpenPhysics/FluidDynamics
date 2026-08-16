@@ -8,14 +8,14 @@
     "intro": {
       "screenSummary": {
         "playArea": "The play area is a channel of fluid flowing from left to right past a cylinder. Coloured dye is added in bands at the left edge so the flow can be seen.",
-        "controlArea": "The control area has a flow speed slider, play and pause buttons, and a Reset All button that returns the simulation to its starting state.",
+        "controlArea": "The control area has a flow speed slider, play and pause buttons, a toolbox with a measuring tape and a ruler, and a Reset All button that returns the simulation to its starting state.",
         "interactionHint": "Change the flow speed and listen for how the wake behind the cylinder changes. Drag inside the channel to push the fluid yourself."
       }
     },
     "lab": {
       "screenSummary": {
         "playArea": "The play area is a channel of fluid flowing from left to right past an obstacle you can move, resize, reshape and tilt. The field can show dye, speed, vorticity or pressure.",
-        "controlArea": "The control area has sliders for flow speed, viscosity, obstacle size, angle of attack, vortex detail and dye fade, pickers for the obstacle shape, the displayed field and the grid resolution, play and pause buttons, and a Reset All button.",
+        "controlArea": "The control area has sliders for flow speed, viscosity, obstacle size, angle of attack, vortex detail and dye fade, pickers for the obstacle shape, the displayed field and the grid resolution, play and pause buttons, a toolbox with a measuring tape and a ruler, and a Reset All button.",
         "interactionHint": "Raise the flow speed or lower the viscosity to raise the Reynolds number. Switch to the vorticity view to see individual vortices most clearly."
       }
     },
@@ -36,7 +36,13 @@
       "dyeFade": "Dye fade",
       "resolution": "Grid resolution",
       "obstacleHandle": "Obstacle position",
-      "obstacleHandleHelpText": "Drag to move the obstacle within the channel."
+      "obstacleHandleHelpText": "Drag to move the obstacle within the channel.",
+      "toolboxTapeName": "Measuring tape",
+      "toolboxTapeHelpText": "Press to take the measuring tape out of the toolbox or to put it back. Drag it out to place it directly.",
+      "toolboxRulerName": "Ruler",
+      "toolboxRulerHelpText": "Press to take the ruler out of the toolbox or to put it back. Drag it out to place it directly.",
+      "rulerName": "Ruler",
+      "rulerHelpText": "Drag to move the ruler, or use the arrow keys. Numbers mark every 10 centimetres."
     }
   },
   "controls": {

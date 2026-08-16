@@ -17,6 +17,9 @@ import {
   OBSTACLE_DIAMETER_RANGE,
   OBSTACLE_DRAG_BOUNDS_M,
   obstacleDragBounds,
+  RULER_POSITION_DEFAULT,
+  TAPE_BASE_DEFAULT,
+  TAPE_TIP_DEFAULT,
   VISCOSITY_DEFAULT,
   VISCOSITY_RANGE,
 } from "../src/FluidDynamicsConstants.js";
@@ -125,6 +128,11 @@ describe("FluidModel", () => {
     model.visualizationModeProperty.value = "vorticity";
     model.gridResolutionProperty.value = "fine";
     model.pressureIterationsProperty.value = 50;
+    model.measuringTapeVisibleProperty.value = true;
+    model.tapeBasePositionProperty.value = model.tapeBasePositionProperty.value.plusXY(0.4, 0.2);
+    model.tapeTipPositionProperty.value = model.tapeTipPositionProperty.value.plusXY(-0.3, 0.15);
+    model.rulerVisibleProperty.value = true;
+    model.rulerPositionProperty.value = model.rulerPositionProperty.value.plusXY(0.9, -0.4);
 
     model.reset();
 
@@ -136,6 +144,11 @@ describe("FluidModel", () => {
     expect(model.visualizationModeProperty.value).toBe("dye");
     expect(model.gridResolutionProperty.value).toBe("standard");
     expect(model.reynoldsNumberProperty.value).toBeCloseTo(initialRe, 12);
+    expect(model.measuringTapeVisibleProperty.value, "reset puts the tape back in the toolbox").toBe(false);
+    expect(model.tapeBasePositionProperty.value.equals(TAPE_BASE_DEFAULT)).toBe(true);
+    expect(model.tapeTipPositionProperty.value.equals(TAPE_TIP_DEFAULT)).toBe(true);
+    expect(model.rulerVisibleProperty.value, "reset puts the ruler back in the toolbox").toBe(false);
+    expect(model.rulerPositionProperty.value.equals(RULER_POSITION_DEFAULT)).toBe(true);
 
     model.dispose();
   });

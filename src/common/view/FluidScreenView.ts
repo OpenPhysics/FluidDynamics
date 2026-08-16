@@ -32,6 +32,7 @@ import { FlowReadoutNode } from "./FlowReadoutNode.js";
 import { FluidControlPanel } from "./FluidControlPanel.js";
 import { FluidFieldNode } from "./FluidFieldNode.js";
 import { ObstacleHandleNode } from "./ObstacleHandleNode.js";
+import { ToolboxPanel } from "./ToolboxPanel.js";
 import { WebGPUUnavailableNode } from "./WebGPUUnavailableNode.js";
 
 type SelfOptions = {
@@ -142,19 +143,62 @@ export class FluidScreenView extends ScreenView {
     });
     this.addChild(resetAllButton);
 
+    // ── Measurement tools ────────────────────────────────────────────────────
+    // The toolbox is a panel like any other; the tools it owns are not its
+    // children but siblings added here, so a ruler dragged across the control
+    // panel floats above it rather than sliding underneath.
+    const toolboxPanel = new ToolboxPanel(model, {
+      modelViewTransform: this.fluidFieldNode.modelViewTransform,
+      screenViewBounds: this.layoutBounds,
+      globalToViewPoint: (globalPoint) => this.globalToLocalPoint(globalPoint),
+      left: FIELD_VIEW_BOUNDS.minX,
+      bottom: this.layoutBounds.maxY - SCREEN_VIEW_MARGIN,
+    });
+    this.addChild(toolboxPanel);
+    this.addChild(toolboxPanel.measuringTapeNode);
+    this.addChild(toolboxPanel.rulerNode);
+
+    // Linked only now that the tools are in the scene graph: a node that is
+    // already invisible when it is added never populates its pdomDisplays, and
+    // its parallel-DOM content stays hidden for good. The links fire
+    // immediately (tools start in the toolbox), hiding through the same path
+    // every later show retraces.
+    const tapeVisibleListener = (visible: boolean): void => {
+      toolboxPanel.measuringTapeNode.visible = visible;
+    };
+    model.measuringTapeVisibleProperty.link(tapeVisibleListener);
+    const rulerVisibleListener = (visible: boolean): void => {
+      toolboxPanel.rulerNode.visible = visible;
+    };
+    model.rulerVisibleProperty.link(rulerVisibleListener);
+
     this.addChild(comboBoxListParent);
 
     // ── Keyboard / reading traversal order ────────────────────────────────────
     // Explicit and independent of z-order: the field first (it is the thing the
-    // screen is about), then the obstacle, then the controls top to bottom, with
-    // the time controls and Reset All last.
+    // screen is about), then the obstacle, then the toolbox and any tools out
+    // of it, then the controls top to bottom, with the time controls and Reset
+    // All last.
     this.addChild(
       new Node({
-        pdomOrder: [this.fluidFieldNode, obstacleHandle, ...controlPanel.controlsInOrder, timeControl, resetAllButton],
+        pdomOrder: [
+          this.fluidFieldNode,
+          obstacleHandle,
+          toolboxPanel.tapeIconNode,
+          toolboxPanel.rulerIconNode,
+          toolboxPanel.measuringTapeNode,
+          toolboxPanel.rulerNode,
+          ...controlPanel.controlsInOrder,
+          timeControl,
+          resetAllButton,
+        ],
       }),
     );
 
     this.disposers.push(() => {
+      model.rulerVisibleProperty.unlink(rulerVisibleListener);
+      model.measuringTapeVisibleProperty.unlink(tapeVisibleListener);
+      toolboxPanel.dispose();
       controlPanel.dispose();
       readout.dispose();
       obstacleHandle?.dispose();

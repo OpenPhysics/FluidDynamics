@@ -32,6 +32,8 @@ src/
       FluidControlPanel.ts       sliders and pickers; option-selected control set
       FlowReadoutNode.ts         Reynolds number and regime
       ObstacleHandleNode.ts      invisible drag/keyboard handle over the body
+      FluidRulerNode.ts          draggable 1-metre ruler (drag + keyboard + PDOM)
+      ToolboxPanel.ts            toolbox the tape and ruler come from and return to
       WebGPUUnavailableNode.ts   the fallback message
       fluidDescription.ts        live a11y description shared by field and summary
     TimeModel.ts, FluidDynamicsPanel.ts, FluidDynamicsButtonOptions.ts,
@@ -220,6 +222,28 @@ hit-tested.
 only creates a paragraph sibling when the paragraph content is non-empty, and the
 message is empty until a failure reason arrives. Without a primary sibling to
 fall back on, `getPlaceableSibling()` asserts and the sim fails to launch.
+
+## Measurement tools
+
+`ToolboxPanel` owns the measuring tape and the ruler, but the nodes it creates
+are **not its children** — FluidScreenView adds them as siblings near the top of
+the z-order, so a ruler dragged across the control panel floats above it. The
+panel keeps only the two icons.
+
+The interaction is the classic toolbox contract. Pressing an icon when its tool
+is hidden takes the tool out at the pointer and forwards the still-active press
+to the tool's own drag listener (`MeasuringTapeNode.startBaseDrag()` /
+`FluidRulerNode.startDrag()`), so the press becomes a drag of the real tool.
+Pressing the icon while the tool is out puts it back — that press *is* the
+keyboard story, since a screen-reader activation arrives as a synthetic press.
+Ending a tool drag over the panel also puts it back. A one-shot flag per tool
+swallows the return test of the drag that took it out, which always ends over
+the toolbox.
+
+Tool state lives in `FluidModel` (visibility + positions in metres), so Reset
+All empties the toolbox with no view-side reset code. The ruler's length and
+tick spacing are computed from the shared `modelViewTransform`, so its scale
+cannot drift from the channel's.
 
 ## Disposal
 

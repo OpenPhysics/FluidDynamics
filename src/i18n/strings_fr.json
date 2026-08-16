@@ -8,14 +8,14 @@
     "intro": {
       "screenSummary": {
         "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un cylindre. Du colorant est ajouté en bandes au bord gauche pour rendre l'écoulement visible.",
-        "controlArea": "La zone de contrôle comporte un curseur de vitesse d'écoulement, des boutons lecture et pause, et un bouton Tout réinitialiser qui ramène la simulation à son état initial.",
+        "controlArea": "La zone de contrôle comporte un curseur de vitesse d'écoulement, des boutons lecture et pause, une boîte à outils avec un ruban à mesurer et une règle, et un bouton Tout réinitialiser qui ramène la simulation à son état initial.",
         "interactionHint": "Modifiez la vitesse d'écoulement et observez comment le sillage derrière le cylindre change. Faites glisser dans le canal pour pousser le fluide vous-même."
       }
     },
     "lab": {
       "screenSummary": {
         "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un obstacle que vous pouvez déplacer, redimensionner, remodeler et incliner. Le champ peut afficher le colorant, la vitesse, la vorticité ou la pression.",
-        "controlArea": "La zone de contrôle comporte des curseurs pour la vitesse d'écoulement, la viscosité, la taille de l'obstacle, l'angle d'attaque, le détail des tourbillons et l'estompage du colorant, des sélecteurs pour la forme de l'obstacle, le champ affiché et la résolution de la grille, des boutons lecture et pause, et un bouton Tout réinitialiser.",
+        "controlArea": "La zone de contrôle comporte des curseurs pour la vitesse d'écoulement, la viscosité, la taille de l'obstacle, l'angle d'attaque, le détail des tourbillons et l'estompage du colorant, des sélecteurs pour la forme de l'obstacle, le champ affiché et la résolution de la grille, des boutons lecture et pause, une boîte à outils avec un ruban à mesurer et une règle, et un bouton Tout réinitialiser.",
         "interactionHint": "Augmentez la vitesse ou réduisez la viscosité pour élever le nombre de Reynolds. Passez à la vue de vorticité pour distinguer le plus clairement chaque tourbillon."
       }
     },
@@ -36,7 +36,13 @@
       "dyeFade": "Estompage du colorant",
       "resolution": "Résolution de la grille",
       "obstacleHandle": "Position de l'obstacle",
-      "obstacleHandleHelpText": "Faites glisser pour déplacer l'obstacle dans le canal."
+      "obstacleHandleHelpText": "Faites glisser pour déplacer l'obstacle dans le canal.",
+      "toolboxTapeName": "Ruban à mesurer",
+      "toolboxTapeHelpText": "Appuyez pour sortir le ruban à mesurer de la boîte à outils ou pour le ranger. Faites-le glisser directement pour le placer.",
+      "toolboxRulerName": "Règle",
+      "toolboxRulerHelpText": "Appuyez pour sortir la règle de la boîte à outils ou pour la ranger. Faites-la glisser directement pour la placer.",
+      "rulerName": "Règle",
+      "rulerHelpText": "Faites glisser la règle pour la déplacer, ou utilisez les flèches. Les numéros marquent tous les 10 centimètres."
     }
   },
   "controls": {

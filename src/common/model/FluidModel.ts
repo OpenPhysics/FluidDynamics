@@ -14,7 +14,7 @@
  * under common/gpu/ rather than here.
  */
 
-import { DerivedProperty, NumberProperty, Property, type TReadOnlyProperty } from "scenerystack/axon";
+import { BooleanProperty, DerivedProperty, NumberProperty, Property, type TReadOnlyProperty } from "scenerystack/axon";
 import { Vector2Property } from "scenerystack/dot";
 import {
   ANGLE_OF_ATTACK_DEFAULT,
@@ -30,6 +30,9 @@ import {
   PRESSURE_ITERATIONS_DEFAULT,
   PRESSURE_ITERATIONS_HIGH,
   PRESSURE_ITERATIONS_RANGE,
+  RULER_POSITION_DEFAULT,
+  TAPE_BASE_DEFAULT,
+  TAPE_TIP_DEFAULT,
   VISCOSITY_DEFAULT,
   VISCOSITY_RANGE,
   VORTICITY_DEFAULT,
@@ -75,6 +78,26 @@ export class FluidModel {
 
   /** Jacobi iterations in the pressure projection. */
   public readonly pressureIterationsProperty: NumberProperty;
+
+  // ── Measurement tools ──────────────────────────────────────────────────────
+  // View-owned nodes, but model-owned state: Reset All puts both tools back in
+  // the toolbox, which is what a learner expects "reset" to mean. Positions are
+  // in metres from the channel's lower-left corner, same frame as the obstacle.
+
+  /** Whether the measuring tape is out of the toolbox. */
+  public readonly measuringTapeVisibleProperty: BooleanProperty;
+
+  /** Tape base (the housing) position, in metres. */
+  public readonly tapeBasePositionProperty: Vector2Property;
+
+  /** Tape tip position, in metres. The readout is the base–tip distance. */
+  public readonly tapeTipPositionProperty: Vector2Property;
+
+  /** Whether the ruler is out of the toolbox. */
+  public readonly rulerVisibleProperty: BooleanProperty;
+
+  /** Ruler centre, in metres. */
+  public readonly rulerPositionProperty: Vector2Property;
 
   /** Re = U·D/ν. Infinite at zero viscosity, which classifies as turbulent. */
   public readonly reynoldsNumberProperty: TReadOnlyProperty<number>;
@@ -123,6 +146,12 @@ export class FluidModel {
     this.pressureIterationsProperty = new NumberProperty(PRESSURE_ITERATIONS_DEFAULT, {
       range: PRESSURE_ITERATIONS_RANGE,
     });
+
+    this.measuringTapeVisibleProperty = new BooleanProperty(false);
+    this.tapeBasePositionProperty = new Vector2Property(TAPE_BASE_DEFAULT);
+    this.tapeTipPositionProperty = new Vector2Property(TAPE_TIP_DEFAULT);
+    this.rulerVisibleProperty = new BooleanProperty(false);
+    this.rulerPositionProperty = new Vector2Property(RULER_POSITION_DEFAULT);
 
     this.reynoldsNumberProperty = new DerivedProperty(
       [this.flowSpeedProperty, this.obstacleDiameterProperty, this.kinematicViscosityProperty],
@@ -191,6 +220,11 @@ export class FluidModel {
     this.visualizationModeProperty.reset();
     this.gridResolutionProperty.reset();
     this.pressureIterationsProperty.reset();
+    this.rulerPositionProperty.reset();
+    this.rulerVisibleProperty.reset();
+    this.tapeTipPositionProperty.reset();
+    this.tapeBasePositionProperty.reset();
+    this.measuringTapeVisibleProperty.reset();
   }
 
   /**
@@ -224,5 +258,10 @@ export class FluidModel {
     this.obstacleDiameterProperty.dispose();
     this.kinematicViscosityProperty.dispose();
     this.flowSpeedProperty.dispose();
+    this.rulerPositionProperty.dispose();
+    this.rulerVisibleProperty.dispose();
+    this.tapeTipPositionProperty.dispose();
+    this.tapeBasePositionProperty.dispose();
+    this.measuringTapeVisibleProperty.dispose();
   }
 }
