@@ -27,11 +27,16 @@ import {
   TIME_CONTROL_SPEED_RADIO_OPTIONS,
 } from "../FluidDynamicsButtonOptions.js";
 import type { FluidModel } from "../model/FluidModel.js";
+import type { ObstacleShape } from "../model/ObstacleShape.js";
 import { TIME_SPEEDS, type TimeModel } from "../TimeModel.js";
 import { FlowReadoutNode } from "./FlowReadoutNode.js";
 import { FluidControlPanel } from "./FluidControlPanel.js";
 import { FluidFieldNode } from "./FluidFieldNode.js";
+import { FluidScaleBarNode } from "./FluidScaleBarNode.js";
+import { ObstacleFociHandleNode } from "./ObstacleFociHandleNode.js";
 import { ObstacleHandleNode } from "./ObstacleHandleNode.js";
+import { ObstacleSizeAngleHandleNode } from "./ObstacleSizeAngleHandleNode.js";
+import { ObstacleThicknessHandleNode } from "./ObstacleThicknessHandleNode.js";
 import { ToolboxPanel } from "./ToolboxPanel.js";
 import { WebGPUUnavailableNode } from "./WebGPUUnavailableNode.js";
 
@@ -78,18 +83,53 @@ export class FluidScreenView extends ScreenView {
     );
     this.addChild(this.fluidFieldNode);
 
-    // Above the field, so a press on the body moves it instead of stirring the
-    // fluid. Only on the Lab screen: the Intro screen is about one variable.
-    const obstacleHandle = options.showFullControls
-      ? new ObstacleHandleNode(
-          model.obstacleCenterProperty,
-          model.obstacleDiameterProperty,
-          this.fluidFieldNode.modelViewTransform,
-        )
-      : null;
-    if (obstacleHandle !== null) {
-      this.addChild(obstacleHandle);
-    }
+    // Above the field, so a press on the body moves it instead of stirring
+    // the fluid. Both screens: moving the body is the point of the obstacle.
+    const obstacleHandle = new ObstacleHandleNode(
+      model.obstacleCenterProperty,
+      model.obstacleDiameterProperty,
+      this.fluidFieldNode.modelViewTransform,
+    );
+    this.addChild(obstacleHandle);
+
+    // The shaping handles, above the translation handle so their knobs win the
+    // hit test where they overlap it. Every shape offers the leading-edge
+    // knob; the foci and thickness knobs belong to one shape each and spend
+    // the rest of their time hidden.
+    const sizeAngleHandle = new ObstacleSizeAngleHandleNode(
+      model.obstacleCenterProperty,
+      model.obstacleDiameterProperty,
+      model.angleOfAttackProperty,
+      this.fluidFieldNode.modelViewTransform,
+    );
+    const fociHandle = new ObstacleFociHandleNode(
+      model.obstacleCenterProperty,
+      model.obstacleDiameterProperty,
+      model.obstacleFocalRadiusProperty,
+      model.angleOfAttackProperty,
+      this.fluidFieldNode.modelViewTransform,
+    );
+    const thicknessHandle = new ObstacleThicknessHandleNode(
+      model.obstacleCenterProperty,
+      model.obstacleDiameterProperty,
+      model.airfoilThicknessProperty,
+      model.angleOfAttackProperty,
+      this.fluidFieldNode.modelViewTransform,
+    );
+    this.addChild(sizeAngleHandle);
+    this.addChild(fociHandle);
+    this.addChild(thicknessHandle);
+
+    // Linked only now that the handles are in the scene graph: a node that is
+    // already invisible when it is added never populates its pdomDisplays, and
+    // its parallel-DOM content stays hidden for good (the tools below rely on
+    // the same ordering).
+    const shapeListener = (shape: ObstacleShape): void => {
+      sizeAngleHandle.visible = shape !== "none";
+      fociHandle.visible = shape === "ellipse";
+      thicknessHandle.visible = shape === "airfoil";
+    };
+    model.obstacleShapeProperty.link(shapeListener);
 
     this.addChild(new WebGPUUnavailableNode(this.fluidFieldNode.gpuUnavailableReasonProperty, FIELD_VIEW_BOUNDS));
 
@@ -99,6 +139,14 @@ export class FluidScreenView extends ScreenView {
       top: FIELD_VIEW_BOUNDS.maxY + 14,
     });
     this.addChild(readout);
+
+    // The fixed reference for the channel's size, anchoring the other end of
+    // the readout row. Not pickable, so it never intercepts a stray drag.
+    const scaleBar = new FluidScaleBarNode(this.fluidFieldNode.modelViewTransform, {
+      right: FIELD_VIEW_BOUNDS.maxX,
+      top: FIELD_VIEW_BOUNDS.maxY + 14,
+    });
+    this.addChild(scaleBar);
 
     // ── Controls ──────────────────────────────────────────────────────────────
     // The combo-box list has to be drawn above everything else, so it lives in a
@@ -184,6 +232,9 @@ export class FluidScreenView extends ScreenView {
         pdomOrder: [
           this.fluidFieldNode,
           obstacleHandle,
+          sizeAngleHandle,
+          fociHandle,
+          thicknessHandle,
           toolboxPanel.tapeIconNode,
           toolboxPanel.rulerIconNode,
           toolboxPanel.measuringTapeNode,
@@ -196,12 +247,17 @@ export class FluidScreenView extends ScreenView {
     );
 
     this.disposers.push(() => {
+      model.obstacleShapeProperty.unlink(shapeListener);
       model.rulerVisibleProperty.unlink(rulerVisibleListener);
       model.measuringTapeVisibleProperty.unlink(tapeVisibleListener);
       toolboxPanel.dispose();
       controlPanel.dispose();
+      scaleBar.dispose();
       readout.dispose();
-      obstacleHandle?.dispose();
+      thicknessHandle.dispose();
+      fociHandle.dispose();
+      sizeAngleHandle.dispose();
+      obstacleHandle.dispose();
       this.fluidFieldNode.dispose();
     });
   }

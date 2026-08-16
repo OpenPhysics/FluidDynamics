@@ -7,7 +7,7 @@
   "a11y": {
     "intro": {
       "screenSummary": {
-        "playArea": "The play area is a channel of fluid flowing from left to right past a cylinder. Coloured dye is added in bands at the left edge so the flow can be seen.",
+        "playArea": "The play area is a channel of fluid flowing from left to right past a cylinder you can move and resize. Coloured dye is added in bands at the left edge so the flow can be seen.",
         "controlArea": "The control area has a flow speed slider, play and pause buttons, a toolbox with a measuring tape and a ruler, and a Reset All button that returns the simulation to its starting state.",
         "interactionHint": "Change the flow speed and listen for how the wake behind the cylinder changes. Drag inside the channel to push the fluid yourself."
       }
@@ -15,7 +15,7 @@
     "lab": {
       "screenSummary": {
         "playArea": "The play area is a channel of fluid flowing from left to right past an obstacle you can move, resize, reshape and tilt. The field can show dye, speed, vorticity or pressure.",
-        "controlArea": "The control area has sliders for flow speed, viscosity, obstacle size, angle of attack, vortex detail and dye fade, pickers for the obstacle shape, the displayed field and the grid resolution, play and pause buttons, a toolbox with a measuring tape and a ruler, and a Reset All button.",
+        "controlArea": "The control area has sliders for flow speed and viscosity, pickers for the obstacle shape and the displayed field, play and pause buttons, a toolbox with a measuring tape and a ruler, and a Reset All button.",
         "interactionHint": "Raise the flow speed or lower the viscosity to raise the Reynolds number. Switch to the vorticity view to see individual vortices most clearly."
       }
     },
@@ -27,9 +27,6 @@
       "flowSpeedHelpText": "Raise the speed to increase the Reynolds number and destabilise the wake.",
       "viscosity": "Viscosity",
       "viscosityHelpText": "Thicker fluid damps the wake and lowers the Reynolds number.",
-      "obstacleSize": "Obstacle size",
-      "angleOfAttack": "Angle of attack",
-      "angleOfAttackHelpText": "Tilt the flat plate or airfoil relative to the flow. It has no effect on the cylinder.",
       "obstacleShape": "Obstacle shape",
       "visualization": "Field to display",
       "vorticity": "Vortex detail",
@@ -37,6 +34,12 @@
       "resolution": "Grid resolution",
       "obstacleHandle": "Obstacle position",
       "obstacleHandleHelpText": "Drag to move the obstacle within the channel.",
+      "sizeAngleHandle": "Obstacle size and angle",
+      "sizeAngleHandleHelpText": "Drag the knob toward or away from the obstacle to resize it; drag it around the obstacle to tilt it. Up and down arrows resize, left and right arrows tilt.",
+      "focusHandle": "Ellipse focus",
+      "focusHandleHelpText": "Drag a focus outward to stretch the ellipse, or toward the centre to round it back into a disk. Up and down arrows stretch, left and right arrows rotate.",
+      "thicknessHandle": "Airfoil thickness",
+      "thicknessHandleHelpText": "Drag the knob up or down to make the airfoil thicker or slimmer; the arrow keys do the same.",
       "toolboxTapeName": "Measuring tape",
       "toolboxTapeHelpText": "Press to take the measuring tape out of the toolbox or to put it back. Drag it out to place it directly.",
       "toolboxRulerName": "Ruler",
@@ -48,24 +51,19 @@
   "controls": {
     "flowSpeed": "Flow Speed",
     "viscosity": "Viscosity",
-    "obstacleSize": "Obstacle Size",
-    "angleOfAttack": "Angle of Attack",
     "obstacleShape": "Obstacle",
     "visualization": "Show",
-    "vorticity": "Vortex Detail",
-    "dyeFade": "Dye Fade",
-    "resolution": "Grid",
     "speedValuePattern": "{{value}} m/s",
-    "sizeValuePattern": "{{value}} m",
-    "angleValuePattern": "{{value}}°",
     "viscosityValuePattern": "{{value}} m²/s",
-    "reynoldsPattern": "Re ≈ {{value}}"
+    "reynoldsPattern": "Re ≈ {{value}}",
+    "scaleBarPattern": "{{value}} m"
   },
   "shapes": {
     "none": "None",
     "cylinder": "Cylinder",
     "plate": "Flat Plate",
-    "airfoil": "Airfoil"
+    "airfoil": "Airfoil",
+    "ellipse": "Ellipse"
   },
   "visualizations": {
     "dye": "Dye",
@@ -94,6 +92,9 @@
   },
   "preferences": {
     "title": "Simulation",
-    "highQualitySolver": "Higher solver accuracy"
+    "highQualitySolver": "Higher solver accuracy",
+    "vorticity": "Vortex detail",
+    "dyeFade": "Dye fade",
+    "gridResolution": "Grid resolution"
   }
 }

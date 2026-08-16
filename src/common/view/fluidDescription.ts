@@ -32,6 +32,7 @@ export function createFluidDescriptionProperty(model: FluidModel): TReadOnlyProp
     cylinder: strings.shapes.cylinderStringProperty,
     plate: strings.shapes.plateStringProperty,
     airfoil: strings.shapes.airfoilStringProperty,
+    ellipse: strings.shapes.ellipseStringProperty,
   };
 
   const descriptionProperty = DerivedProperty.deriveAny(
@@ -45,6 +46,7 @@ export function createFluidDescriptionProperty(model: FluidModel): TReadOnlyProp
       strings.shapes.cylinderStringProperty,
       strings.shapes.plateStringProperty,
       strings.shapes.airfoilStringProperty,
+      strings.shapes.ellipseStringProperty,
     ],
     () =>
       StringUtils.fillIn(a11y.fieldDescriptionPatternStringProperty.value, {

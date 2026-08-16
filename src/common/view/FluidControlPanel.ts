@@ -6,14 +6,23 @@
  * Which controls appear is an option rather than a subclass: the Intro and Lab
  * screens run the identical solver over the identical FluidModel, and differ
  * only in how much of it they expose. Intro shows flow speed alone, so the one
- * relationship it is about — speed up the flow and the wake goes unstable — is
- * not competing with six other sliders.
+ * relationship it is about — speed up the flow and the wake goes unstable —
+ * is not competing with the other sliders.
+ *
+ * The obstacle's size and angle of attack are deliberately absent from this
+ * panel: they are direct-manipulation quantities, changed by dragging the
+ * handles on the body itself (see ObstacleSizeAngleHandleNode and friends),
+ * and a slider duplicating them would be a second, competing interface.
  *
  * Sliders are hand-laid-out (label and value on one line, track below) rather
  * than NumberControls. A NumberControl carries a title, arrow buttons and a
- * number display and runs about 70 px tall; seven of them do not fit beside a
- * 350 px field, and the arrow buttons buy nothing for parameters that are
- * explored by sweeping rather than by setting an exact value.
+ * number display and runs about 70 px tall; the panel's controls do not fit
+ * beside a 350 px field, and the arrow buttons buy nothing for parameters that
+ * are explored by sweeping rather than by setting an exact value.
+ *
+ * Vortex detail, dye fade and grid resolution used to live here; all three are
+ * display/quality knobs rather than physics controls, so they were promoted to
+ * Preferences → Simulation (see FluidDynamicsPreferencesNode).
  */
 
 import { DerivedProperty, type NumberProperty, type Property, type TReadOnlyProperty } from "scenerystack/axon";
@@ -25,25 +34,20 @@ import { PhetFont } from "scenerystack/scenery-phet";
 import { ComboBox, HSlider } from "scenerystack/sun";
 import FluidDynamicsColors from "../../FluidDynamicsColors.js";
 import {
-  ANGLE_OF_ATTACK_RANGE,
   CONTROL_LABEL_FONT_SIZE,
   CONTROL_PANEL_WIDTH,
-  DYE_DISSIPATION_RANGE,
   FLOW_SPEED_RANGE,
-  OBSTACLE_DIAMETER_RANGE,
   VISCOSITY_RANGE,
-  VORTICITY_RANGE,
 } from "../../FluidDynamicsConstants.js";
 import { StringManager } from "../../i18n/StringManager.js";
 import { FLUID_DYNAMICS_COMBO_BOX_OPTIONS, LIGHT_SURFACE_TEXT_FILL } from "../FluidDynamicsButtonOptions.js";
 import { FluidDynamicsPanel, type FluidDynamicsPanelOptions } from "../FluidDynamicsPanel.js";
-import { GRID_RESOLUTIONS, type GridResolution } from "../gpu/FluidGridSpec.js";
 import type { FluidModel } from "../model/FluidModel.js";
-import { OBSTACLE_SHAPES, type ObstacleShape } from "../model/ObstacleShape.js";
+import { LAB_OBSTACLE_SHAPES, type ObstacleShape } from "../model/ObstacleShape.js";
 import { VISUALIZATION_MODES, type VisualizationMode } from "../model/VisualizationMode.js";
 
 type SelfOptions = {
-  /** Viscosity, obstacle shape, size and angle of attack, and the visualization picker. */
+  /** Viscosity, obstacle shape and the visualization picker. */
   readonly showFullControls?: boolean;
 };
 
@@ -71,18 +75,13 @@ export class FluidControlPanel extends FluidDynamicsPanel {
       cylinder: strings.shapes.cylinderStringProperty,
       plate: strings.shapes.plateStringProperty,
       airfoil: strings.shapes.airfoilStringProperty,
+      ellipse: strings.shapes.ellipseStringProperty,
     };
     const visualizationLabels: Record<VisualizationMode, TReadOnlyProperty<string>> = {
       dye: strings.visualizations.dyeStringProperty,
       speed: strings.visualizations.speedStringProperty,
       vorticity: strings.visualizations.vorticityStringProperty,
       pressure: strings.visualizations.pressureStringProperty,
-    };
-    const resolutionLabels: Record<GridResolution, TReadOnlyProperty<string>> = {
-      standard: strings.resolutions.standardStringProperty,
-      fine: strings.resolutions.fineStringProperty,
-      veryFine: strings.resolutions.veryFineStringProperty,
-      ultraFine: strings.resolutions.ultraFineStringProperty,
     };
     const disposers: (() => void)[] = [];
     const controls: Node[] = [];
@@ -91,7 +90,7 @@ export class FluidControlPanel extends FluidDynamicsPanel {
       property: NumberProperty,
       range: Range,
       label: TReadOnlyProperty<string>,
-      valuePattern: TReadOnlyProperty<string> | null,
+      valuePattern: TReadOnlyProperty<string>,
       decimals: number,
       accessibleName: TReadOnlyProperty<string>,
       accessibleHelpText?: TReadOnlyProperty<string>,
@@ -125,44 +124,11 @@ export class FluidControlPanel extends FluidDynamicsPanel {
           a11y.viscosityStringProperty,
           a11y.viscosityHelpTextStringProperty,
         ),
-        slider(
-          model.obstacleDiameterProperty,
-          OBSTACLE_DIAMETER_RANGE,
-          strings.controls.obstacleSizeStringProperty,
-          strings.controls.sizeValuePatternStringProperty,
-          2,
-          a11y.obstacleSizeStringProperty,
-        ),
-        slider(
-          model.angleOfAttackProperty,
-          ANGLE_OF_ATTACK_RANGE,
-          strings.controls.angleOfAttackStringProperty,
-          strings.controls.angleValuePatternStringProperty,
-          0,
-          a11y.angleOfAttackStringProperty,
-          a11y.angleOfAttackHelpTextStringProperty,
-        ),
-        slider(
-          model.vorticityProperty,
-          VORTICITY_RANGE,
-          strings.controls.vorticityStringProperty,
-          null,
-          0,
-          a11y.vorticityStringProperty,
-        ),
-        slider(
-          model.dyeDissipationProperty,
-          DYE_DISSIPATION_RANGE,
-          strings.controls.dyeFadeStringProperty,
-          null,
-          2,
-          a11y.dyeFadeStringProperty,
-        ),
       );
 
       const shapeBox = createComboBox<ObstacleShape>(
         model.obstacleShapeProperty,
-        OBSTACLE_SHAPES,
+        LAB_OBSTACLE_SHAPES,
         (shape) => shapeLabels[shape],
         strings.controls.obstacleShapeStringProperty,
         a11y.obstacleShapeStringProperty,
@@ -176,16 +142,8 @@ export class FluidControlPanel extends FluidDynamicsPanel {
         a11y.visualizationStringProperty,
         listParent,
       );
-      const resolutionBox = createComboBox<GridResolution>(
-        model.gridResolutionProperty,
-        GRID_RESOLUTIONS,
-        (resolution) => resolutionLabels[resolution],
-        strings.controls.resolutionStringProperty,
-        a11y.resolutionStringProperty,
-        listParent,
-      );
 
-      for (const box of [shapeBox, visualizationBox, resolutionBox]) {
+      for (const box of [shapeBox, visualizationBox]) {
         children.push(box.node);
         controls.push(box.comboBox);
         disposers.push(box.dispose);
@@ -213,19 +171,14 @@ function createSlider(
   property: NumberProperty,
   range: Range,
   label: TReadOnlyProperty<string>,
-  valuePattern: TReadOnlyProperty<string> | null,
+  valuePattern: TReadOnlyProperty<string>,
   decimals: number,
   accessibleName: TReadOnlyProperty<string>,
   accessibleHelpText?: TReadOnlyProperty<string>,
 ): { node: Node; slider: Node; dispose: () => void } {
-  // Dimensionless controls (vortex detail, dye fade) have no unit to append, so
-  // they pass no pattern and show the bare number.
-  const valueStringProperty =
-    valuePattern === null
-      ? new DerivedProperty([property], (value) => value.toFixed(decimals))
-      : new DerivedProperty([property, valuePattern], (value, pattern) =>
-          StringUtils.fillIn(pattern, { value: value.toFixed(decimals) }),
-        );
+  const valueStringProperty = new DerivedProperty([property, valuePattern], (value, pattern) =>
+    StringUtils.fillIn(pattern, { value: value.toFixed(decimals) }),
+  );
 
   const labelText = new Text(label, {
     font: new PhetFont(CONTROL_LABEL_FONT_SIZE),

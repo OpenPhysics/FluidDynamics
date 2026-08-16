@@ -17,9 +17,9 @@ shown beneath the field.
 
 - **Intro** — a fixed cylinder and one control: flow speed.
 - **Lab** — viscosity, obstacle size, shape (cylinder, flat plate, airfoil) and
-  position, vortex detail, dye fade, grid resolution, and four views of the field
-  (dye, speed, vorticity, pressure). Drag anywhere in the channel to push the
-  fluid and add dye.
+  position, and four views of the field (dye, speed, vorticity, pressure).
+  Vortex detail, dye fade and grid resolution live in Preferences → Simulation.
+  Drag anywhere in the channel to push the fluid and add dye.
 
 **WebGPU required.** The solver is Jos Stam's *Stable Fluids* running entirely in
 WGSL compute shaders — there is no CPU fallback. Recent Chrome, Edge and Safari

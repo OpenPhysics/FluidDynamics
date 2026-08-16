@@ -6,7 +6,7 @@
 // The SimUniforms struct below is the contract with FluidUniforms.ts: member
 // order here and the float offsets there must agree, and a unit test asserts it.
 // Fields are grouped by alignment (vec4 first, then vec2, then f32) so no member
-// needs implicit padding. The members occupy 132 bytes; the struct's own
+// needs implicit padding. The members occupy 140 bytes; the struct's own
 // alignment rounds that up to 144, which is the uniform buffer's size.
 
 struct SimUniforms {
@@ -36,9 +36,16 @@ struct SimUniforms {
   // half the airfoil's chord.
   obstacleRadius : f32,
   obstacleShape  : f32,
-  // Angle of attack of the plate and the airfoil, in radians from the inflow
-  // direction. Positive tilts the leading edge up. The cylinder ignores it.
+  // Angle of attack of the plate, the airfoil and the ellipse's major axis, in
+  // radians from the inflow direction. Positive tilts the leading edge up. The
+  // cylinder ignores it.
   obstacleAngle  : f32,
+  // Half the distance between the ellipse's two foci, in metres. Zero makes the
+  // ellipse a disk. The other shapes ignore it.
+  obstacleFocalRadius : f32,
+  // Airfoil maximum thickness as a fraction of chord (NACA 00xx). Other shapes
+  // ignore it.
+  airfoilThickness    : f32,
   visualization  : f32,
   pointerActive  : f32,
   pointerRadius  : f32,
@@ -48,9 +55,6 @@ struct SimUniforms {
   // perturbation in forces.wgsl vary, which is what seeds vortex shedding.
   time           : f32,
 }
-
-// Maximum thickness of the airfoil as a fraction of chord (a NACA 0012).
-const AIRFOIL_THICKNESS: f32 = 0.12;
 
 // ── Coordinate helpers ────────────────────────────────────────────────────────
 
@@ -86,12 +90,12 @@ fn toChordFrame(d: vec2<f32>, alpha: f32) -> vec2<f32> {
 }
 
 // Approximate signed distance to a symmetric NACA 00xx section of the given
-// chord, at the given angle of attack. The NACA thickness distribution has no
-// closed-form distance function; the vertical gap to the surface is used
-// instead. Only the sign is load-bearing (it decides which cells are solid);
-// the magnitude is used for the outline in the display pass, where a slightly
-// wrong distance is invisible.
-fn airfoilSDF(d: vec2<f32>, chord: f32, alpha: f32) -> f32 {
+// chord and thickness fraction, at the given angle of attack. The NACA
+// thickness distribution has no closed-form distance function; the vertical
+// gap to the surface is used instead. Only the sign is load-bearing (it
+// decides which cells are solid); the magnitude is used for the outline in
+// the display pass, where a slightly wrong distance is invisible.
+fn airfoilSDF(d: vec2<f32>, chord: f32, thickness: f32, alpha: f32) -> f32 {
   // Rotate into the airfoil's frame, then shift so x runs 0..1 from leading edge.
   let local = toChordFrame(d, alpha);
   let x = local.x / chord + 0.5;
@@ -104,13 +108,24 @@ fn airfoilSDF(d: vec2<f32>, chord: f32, alpha: f32) -> f32 {
   }
 
   let halfThickness =
-    5.0 * AIRFOIL_THICKNESS *
+    5.0 * thickness *
     (0.2969 * sqrt(x) - 0.1260 * x - 0.3516 * x * x + 0.2843 * x * x * x - 0.1015 * x * x * x * x);
   return (abs(y) - halfThickness) * chord;
 }
 
+// Approximate signed distance to an ellipse with semi-axes (a, b) at the given
+// angle of attack. The exact ellipse distance has no closed form; scaling space
+// so the ellipse becomes a unit circle and scaling the result back is exact on
+// the axes and slightly short elsewhere. Like the airfoil, only the sign is
+// load-bearing for the solver, and the display pass only needs it near the rim.
+fn ellipseSDF(d: vec2<f32>, a: f32, b: f32, alpha: f32) -> f32 {
+  let local = toChordFrame(d, alpha);
+  return (length(local / vec2<f32>(a, b)) - 1.0) * min(a, b);
+}
+
 // Signed distance to the obstacle at a point in metres. Positive outside.
-// The shape codes match ObstacleShape.ts: 0 none, 1 cylinder, 2 plate, 3 airfoil.
+// The shape codes match ObstacleShape.ts: 0 none, 1 cylinder, 2 plate, 3
+// airfoil, 4 ellipse.
 fn obstacleSDF(p: vec2<f32>, uniforms: SimUniforms) -> f32 {
   let shape = i32(uniforms.obstacleShape + 0.5);
   let d = p - uniforms.obstacleCenter;
@@ -128,7 +143,16 @@ fn obstacleSDF(p: vec2<f32>, uniforms: SimUniforms) -> f32 {
     return boxSDF(toChordFrame(d, alpha), vec2<f32>(r, r * 0.12));
   }
   if (shape == 3) {
-    return airfoilSDF(d, r * 2.0, alpha);
+    return airfoilSDF(d, r * 2.0, uniforms.airfoilThickness, alpha);
+  }
+  if (shape == 4) {
+    // An ellipse with its foci on the major axis: a = D/2 out to the rim, and
+    // b = √(a² − c²) from the focal half-separation. The clamp is insurance
+    // for a stale uniform: the model never lets c reach a, but if one ever
+    // did, √ of a negative is NaN and every comparison after it is false.
+    let c = min(uniforms.obstacleFocalRadius, 0.95 * r);
+    let b = sqrt(max(r * r - c * c, r * r * 0.0025));
+    return ellipseSDF(d, r, b, alpha);
   }
   // "none": a distance no cell can be inside of.
   return 1.0e9;

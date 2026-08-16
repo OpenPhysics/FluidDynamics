@@ -23,12 +23,12 @@
  *   byte 64   pointerPos     vec2
  *   byte 72   pointerDelta   vec2
  *   byte 80   dt             f32   (align 4)
- *   …         thirteen more f32, the last of which is `time`
- *   byte 132  — the members end; the struct's alignment rounds it up to 144
+ *   …         fourteen more f32, the last of which is `time`
+ *   byte 140  — the members end; the struct's alignment rounds it up to 144
  *   byte 144  end            — a multiple of 16, as the struct's alignment requires
  *
- * That final 12 bytes of round-up is why the buffer is 144 bytes while the
- * members stop at 132: it must be at least the struct's rounded size, and it
+ * That final 4 bytes of round-up is why the buffer is 144 bytes while the
+ * members stop at 140: it must be at least the struct's rounded size, and it
  * must itself be a multiple of 16. The floats past `time` are never written.
  */
 
@@ -63,11 +63,13 @@ export const UNIFORM_OFFSETS = {
   obstacleRadius: 25,
   obstacleShape: 26,
   obstacleAngle: 27,
-  visualization: 28,
-  pointerActive: 29,
-  pointerRadius: 30,
-  velocityScale: 31,
-  time: 32,
+  obstacleFocalRadius: 28,
+  airfoilThickness: 29,
+  visualization: 30,
+  pointerActive: 31,
+  pointerRadius: 32,
+  velocityScale: 33,
+  time: 34,
 } as const;
 
 /** Everything the shaders need to know about one simulation step. */
@@ -91,6 +93,10 @@ export type FluidUniformValues = {
   readonly obstacleShape: number;
   /** Angle of attack in radians; see FluidModel.obstacleAngle. */
   readonly obstacleAngle: number;
+  /** Ellipse focal half-separation in metres; see FluidModel.obstacleFocalRadiusProperty. */
+  readonly obstacleFocalRadius: number;
+  /** Airfoil thickness as a fraction of chord; see FluidModel.airfoilThicknessProperty. */
+  readonly airfoilThickness: number;
   readonly visualization: number;
   readonly pointerActive: boolean;
   readonly pointerRadius: number;
@@ -152,6 +158,8 @@ export class FluidUniforms {
     d[o.obstacleRadius] = values.obstacleRadius;
     d[o.obstacleShape] = values.obstacleShape;
     d[o.obstacleAngle] = values.obstacleAngle;
+    d[o.obstacleFocalRadius] = values.obstacleFocalRadius;
+    d[o.airfoilThickness] = values.airfoilThickness;
     d[o.visualization] = values.visualization;
     d[o.pointerActive] = values.pointerActive ? 1 : 0;
     d[o.pointerRadius] = values.pointerRadius;

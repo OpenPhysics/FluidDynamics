@@ -39,6 +39,8 @@ function sampleValues(): FluidUniformValues {
     obstacleRadius: 0.075,
     obstacleShape: 1,
     obstacleAngle: 0.25,
+    obstacleFocalRadius: 0.05,
+    airfoilThickness: 0.12,
     visualization: 2,
     pointerActive: true,
     pointerRadius: 0.05,
@@ -110,7 +112,7 @@ describe("FluidUniforms layout", () => {
       expectedIndex += vec4Members.has(name) ? 4 : vec2Members.has(name) ? 2 : 1;
     }
     // The members stop before the buffer does: the struct's own alignment (16,
-    // from its vec4s) rounds 132 bytes of members up to the 144-byte buffer,
+    // from its vec4s) rounds 140 bytes of members up to the 144-byte buffer,
     // and only that round-up may sit between the last member and the end.
     expect(expectedIndex, "members are contiguous from the start").toBeLessThanOrEqual(UNIFORM_FLOAT_COUNT);
     expect(Math.ceil(expectedIndex / 4) * 4, "the buffer is the members rounded up to the struct's alignment").toBe(
@@ -151,6 +153,8 @@ describe("FluidUniforms packing", () => {
     expect(data[UNIFORM_OFFSETS.vorticity]).toBe(18);
     expect(data[UNIFORM_OFFSETS.obstacleShape]).toBe(1);
     expect(data[UNIFORM_OFFSETS.obstacleAngle]).toBe(0.25);
+    expect(data[UNIFORM_OFFSETS.obstacleFocalRadius]).toBe(Math.fround(0.05));
+    expect(data[UNIFORM_OFFSETS.airfoilThickness]).toBe(Math.fround(0.12));
     expect(data[UNIFORM_OFFSETS.visualization]).toBe(2);
     expect(data[UNIFORM_OFFSETS.velocityScale]).toBe(3);
     expect(data[UNIFORM_OFFSETS.time]).toBe(12.5);

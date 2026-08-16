@@ -298,6 +298,8 @@ export class FluidFieldNode extends CanvasNode {
       obstacleRadius: model.obstacleRadius,
       obstacleShape: obstacleShapeCode(model.obstacleShapeProperty.value),
       obstacleAngle: model.obstacleAngle,
+      obstacleFocalRadius: model.obstacleFocalRadiusProperty.value,
+      airfoilThickness: model.airfoilThicknessProperty.value,
       visualization: visualizationModeCode(model.visualizationModeProperty.value),
       pointerActive: pointer !== null && !this.pointerDelta.equals(Vector2.ZERO),
       pointerRadius: POINTER_RADIUS_M,

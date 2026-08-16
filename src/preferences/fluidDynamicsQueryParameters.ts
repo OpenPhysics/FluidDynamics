@@ -11,11 +11,19 @@
  * 2. If it should also be user-editable at runtime, surface it as a preference
  *    in FluidDynamicsPreferencesModel (initialize that Property from this query parameter).
  *
- * Usage: append e.g. `?highQualitySolver=true` to the sim URL.
+ * Usage: append e.g. `?gridResolution=fine&vorticity=25&dyeDissipation=0.9` to
+ * the sim URL.
  */
 
 import { logGlobal } from "scenerystack/phet-core";
 import { QueryStringMachine } from "scenerystack/query-string-machine";
+import { GRID_RESOLUTIONS } from "../common/gpu/FluidGridSpec.js";
+import {
+  DYE_DISSIPATION_DEFAULT,
+  DYE_DISSIPATION_RANGE,
+  VORTICITY_DEFAULT,
+  VORTICITY_RANGE,
+} from "../FluidDynamicsConstants.js";
 import FluidDynamicsNamespace from "../FluidDynamicsNamespace.js";
 
 const fluidDynamicsQueryParameters = QueryStringMachine.getAll({
@@ -26,6 +34,40 @@ const fluidDynamicsQueryParameters = QueryStringMachine.getAll({
   highQualitySolver: {
     type: "boolean",
     defaultValue: false,
+    public: true,
+  },
+
+  /**
+   * Start the solver at this grid resolution (one of GRID_RESOLUTIONS).
+   * Surfaced as a preference in Preferences → Simulation, so this only sets the
+   * initial value.
+   */
+  gridResolution: {
+    type: "string",
+    defaultValue: "standard",
+    validValues: [...GRID_RESOLUTIONS],
+    public: true,
+  },
+
+  /**
+   * Start with this vorticity-confinement strength. Surfaced as a preference in
+   * Preferences → Simulation, so this only sets the initial value.
+   */
+  vorticity: {
+    type: "number",
+    defaultValue: VORTICITY_DEFAULT,
+    isValidValue: (value: number) => value >= VORTICITY_RANGE.min && value <= VORTICITY_RANGE.max,
+    public: true,
+  },
+
+  /**
+   * Start with this fraction of dye remaining after one second. Surfaced as a
+   * preference in Preferences → Simulation, so this only sets the initial value.
+   */
+  dyeDissipation: {
+    type: "number",
+    defaultValue: DYE_DISSIPATION_DEFAULT,
+    isValidValue: (value: number) => value >= DYE_DISSIPATION_RANGE.min && value <= DYE_DISSIPATION_RANGE.max,
     public: true,
   },
 

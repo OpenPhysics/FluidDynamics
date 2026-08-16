@@ -14,16 +14,24 @@ import { TimeModel } from "../../common/TimeModel.js";
 import type { FluidDynamicsPreferencesModel } from "../../preferences/FluidDynamicsPreferencesModel.js";
 
 export class LabModel implements TModel {
-  /** Flow parameters. All of them are exposed to the learner on this screen. */
-  public readonly fluid = new FluidModel();
+  /**
+   * Flow parameters. All of them are exposed to the learner on this screen.
+   * Starts on the ellipse, which the handles can pull into any eccentricity —
+   * including none, where it is the disk.
+   */
+  public readonly fluid = new FluidModel({ initialObstacleShape: "ellipse" });
 
   /** Play/pause and elapsed time. Starts playing — a paused fluid shows nothing. */
   public readonly timer = new TimeModel(true);
 
   public constructor(preferences: FluidDynamicsPreferencesModel) {
-    // Solver accuracy is a preference rather than a screen control, so the model
-    // subscribes to it here instead of owning it.
+    // Solver accuracy, vortex detail, dye fade and grid resolution are
+    // preferences rather than screen controls, so the model subscribes to them
+    // here instead of owning them.
     this.fluid.attachSolverQuality(preferences.highQualitySolverProperty);
+    this.fluid.attachVorticity(preferences.vorticityProperty);
+    this.fluid.attachDyeDissipation(preferences.dyeDissipationProperty);
+    this.fluid.attachGridResolution(preferences.gridResolutionProperty);
   }
 
   public reset(): void {

@@ -2,26 +2,33 @@
  * Tests for the shared flow-parameter model.
  */
 
+import { NumberProperty, Property } from "scenerystack/axon";
 import { Vector2 } from "scenerystack/dot";
 import { describe, expect, it } from "vitest";
+import type { GridResolution } from "../src/common/gpu/FluidGridSpec.js";
 import { FLOW_REGIMES } from "../src/common/model/FlowRegime.js";
 import { FluidModel } from "../src/common/model/FluidModel.js";
 import { OBSTACLE_SHAPES, obstacleShapeCode } from "../src/common/model/ObstacleShape.js";
 import { VISUALIZATION_MODES, visualizationModeCode } from "../src/common/model/VisualizationMode.js";
 import {
+  AIRFOIL_THICKNESS_DEFAULT,
+  AIRFOIL_THICKNESS_RANGE,
   ANGLE_OF_ATTACK_DEFAULT,
   ANGLE_OF_ATTACK_RANGE,
+  DYE_DISSIPATION_DEFAULT,
   FLOW_SPEED_DEFAULT,
   FLOW_SPEED_RANGE,
   OBSTACLE_DIAMETER_DEFAULT,
   OBSTACLE_DIAMETER_RANGE,
   OBSTACLE_DRAG_BOUNDS_M,
+  OBSTACLE_FOCAL_MAX_FRACTION,
   obstacleDragBounds,
   RULER_POSITION_DEFAULT,
   TAPE_BASE_DEFAULT,
   TAPE_TIP_DEFAULT,
   VISCOSITY_DEFAULT,
   VISCOSITY_RANGE,
+  VORTICITY_DEFAULT,
 } from "../src/FluidDynamicsConstants.js";
 
 describe("FluidModel", () => {
@@ -142,7 +149,6 @@ describe("FluidModel", () => {
     expect(model.obstacleShapeProperty.value).toBe("cylinder");
     expect(model.angleOfAttackProperty.value).toBe(ANGLE_OF_ATTACK_DEFAULT);
     expect(model.visualizationModeProperty.value).toBe("dye");
-    expect(model.gridResolutionProperty.value).toBe("standard");
     expect(model.reynoldsNumberProperty.value).toBeCloseTo(initialRe, 12);
     expect(model.measuringTapeVisibleProperty.value, "reset puts the tape back in the toolbox").toBe(false);
     expect(model.tapeBasePositionProperty.value.equals(TAPE_BASE_DEFAULT)).toBe(true);
@@ -150,7 +156,55 @@ describe("FluidModel", () => {
     expect(model.rulerVisibleProperty.value, "reset puts the ruler back in the toolbox").toBe(false);
     expect(model.rulerPositionProperty.value.equals(RULER_POSITION_DEFAULT)).toBe(true);
 
+    // Preference-backed mirrors, not experiment state: Reset All leaves them
+    // to Preferences → Simulation, which it does not touch.
+    expect(model.vorticityProperty.value, "vortex detail is a preference and survives reset").toBe(5);
+    expect(model.dyeDissipationProperty.value, "dye fade is a preference and survives reset").toBe(0.2);
+    expect(model.gridResolutionProperty.value, "grid resolution is a preference and survives reset").toBe("fine");
+
     model.dispose();
+  });
+
+  it("mirrors the vorticity, dye-fade and grid-resolution preferences once attached", () => {
+    const model = new FluidModel();
+    const vorticityPreference = new NumberProperty(30);
+    const dyeFadePreference = new NumberProperty(0.5);
+    const resolutionPreference = new Property<GridResolution>("veryFine");
+
+    model.attachVorticity(vorticityPreference);
+    model.attachDyeDissipation(dyeFadePreference);
+    model.attachGridResolution(resolutionPreference);
+
+    // link fires immediately, so the model starts at the preference's value.
+    expect(model.vorticityProperty.value).toBe(30);
+    expect(model.dyeDissipationProperty.value).toBe(0.5);
+    expect(model.gridResolutionProperty.value).toBe("veryFine");
+
+    vorticityPreference.value = 12;
+    dyeFadePreference.value = 0.9;
+    resolutionPreference.value = "ultraFine";
+    expect(model.vorticityProperty.value).toBe(12);
+    expect(model.dyeDissipationProperty.value).toBe(0.9);
+    expect(model.gridResolutionProperty.value).toBe("ultraFine");
+
+    // The model is resettable without dragging the preferences along.
+    vorticityPreference.value = VORTICITY_DEFAULT;
+    dyeFadePreference.value = DYE_DISSIPATION_DEFAULT;
+    resolutionPreference.value = "standard";
+    model.reset();
+    expect(model.vorticityProperty.value).toBe(VORTICITY_DEFAULT);
+    expect(model.dyeDissipationProperty.value).toBe(DYE_DISSIPATION_DEFAULT);
+    expect(model.gridResolutionProperty.value).toBe("standard");
+
+    // Dispose unhooks the model from the preferences without disposing them.
+    model.dispose();
+    vorticityPreference.value = 40;
+    dyeFadePreference.value = 0.3;
+    resolutionPreference.value = "fine";
+
+    vorticityPreference.dispose();
+    dyeFadePreference.dispose();
+    resolutionPreference.dispose();
   });
 });
 
@@ -180,7 +234,7 @@ describe("obstacle drag bounds", () => {
 
 describe("shader enum codes", () => {
   it("gives each obstacle shape a distinct code matching its index", () => {
-    expect(OBSTACLE_SHAPES.map(obstacleShapeCode)).toEqual([0, 1, 2, 3]);
+    expect(OBSTACLE_SHAPES.map(obstacleShapeCode)).toEqual([0, 1, 2, 3, 4]);
   });
 
   it("gives each visualization mode a distinct code matching its index", () => {
@@ -189,5 +243,47 @@ describe("shader enum codes", () => {
 
   it("keeps 'none' as obstacle code 0, which the shader treats as no body", () => {
     expect(obstacleShapeCode("none")).toBe(0);
+  });
+});
+
+describe("obstacle morphing", () => {
+  it("starts on the screen's chosen shape — cylinder for Intro, ellipse for Lab", () => {
+    const introModel = new FluidModel();
+    const labModel = new FluidModel({ initialObstacleShape: "ellipse" });
+
+    expect(introModel.obstacleShapeProperty.value).toBe("cylinder");
+    expect(labModel.obstacleShapeProperty.value).toBe("ellipse");
+
+    introModel.dispose();
+    labModel.dispose();
+  });
+
+  it("clamps the focal separation to what a shrunken body can hold", () => {
+    const model = new FluidModel();
+    model.obstacleDiameterProperty.value = OBSTACLE_DIAMETER_RANGE.max;
+    // The fattest focal separation the largest body allows.
+    model.obstacleFocalRadiusProperty.value = (OBSTACLE_FOCAL_MAX_FRACTION * OBSTACLE_DIAMETER_RANGE.max) / 2;
+
+    // Shrinking the body must drag the foci in with it, or b goes imaginary.
+    model.obstacleDiameterProperty.value = OBSTACLE_DIAMETER_DEFAULT;
+    expect(model.obstacleFocalRadiusProperty.value).toBeCloseTo(
+      (OBSTACLE_FOCAL_MAX_FRACTION * OBSTACLE_DIAMETER_DEFAULT) / 2,
+      12,
+    );
+
+    model.dispose();
+  });
+
+  it("resets the focal separation and airfoil thickness with everything else", () => {
+    const model = new FluidModel();
+    model.obstacleFocalRadiusProperty.value = 0.1;
+    model.airfoilThicknessProperty.value = AIRFOIL_THICKNESS_RANGE.max;
+
+    model.reset();
+
+    expect(model.obstacleFocalRadiusProperty.value).toBe(0);
+    expect(model.airfoilThicknessProperty.value).toBe(AIRFOIL_THICKNESS_DEFAULT);
+
+    model.dispose();
   });
 });

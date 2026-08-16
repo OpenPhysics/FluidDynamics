@@ -186,7 +186,15 @@ export class WebGPUFluidEngine {
   private isMaskStale = true;
 
   /** The obstacle the mask was last baked for. */
-  private maskedObstacle = { shape: Number.NaN, radius: Number.NaN, x: Number.NaN, y: Number.NaN, angle: Number.NaN };
+  private maskedObstacle = {
+    shape: Number.NaN,
+    radius: Number.NaN,
+    x: Number.NaN,
+    y: Number.NaN,
+    angle: Number.NaN,
+    focalRadius: Number.NaN,
+    thickness: Number.NaN,
+  };
 
   private pipelines!: Pipelines;
   private bindGroups!: BindGroups;
@@ -498,7 +506,9 @@ export class WebGPUFluidEngine {
       previous.radius !== values.obstacleRadius ||
       previous.x !== values.obstacleCenterX ||
       previous.y !== values.obstacleCenterY ||
-      previous.angle !== values.obstacleAngle
+      previous.angle !== values.obstacleAngle ||
+      previous.focalRadius !== values.obstacleFocalRadius ||
+      previous.thickness !== values.airfoilThickness
     ) {
       this.isMaskStale = true;
       this.maskedObstacle = {
@@ -507,6 +517,8 @@ export class WebGPUFluidEngine {
         x: values.obstacleCenterX,
         y: values.obstacleCenterY,
         angle: values.obstacleAngle,
+        focalRadius: values.obstacleFocalRadius,
+        thickness: values.airfoilThickness,
       };
     }
   }

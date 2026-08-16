@@ -152,6 +152,9 @@ npm run lint && npm run check && npm run build && npm test
 | Parameter | Purpose |
 |---|---|
 | `highQualitySolver` | Public. Initial value of the Preferences → Simulation toggle (50 vs 30 red-black SOR pressure sweeps). |
+| `gridResolution` | Public. Initial value of the Preferences → Simulation picker (`standard`, `fine`, `veryFine`, `ultraFine`). |
+| `vorticity` | Public. Initial value of the Preferences → Simulation vortex-detail slider (0–40). |
+| `dyeDissipation` | Public. Initial value of the Preferences → Simulation dye-fade slider (0.1–1). |
 | `pressureIterations` | Development only. Overrides both the default and the preference; `0` means "use the preference". |
 
 ## PWA

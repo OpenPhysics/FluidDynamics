@@ -1,14 +1,15 @@
 /**
  * IntroModel.ts
  *
- * Model for the Intro screen: flow past a fixed cylinder, with a single control.
+ * Model for the Intro screen: flow past a cylinder the learner can move and
+ * resize, with flow speed as the only panel control.
  *
  * The Intro screen exists to make one relationship visible — raise the flow
  * speed and the wake goes from smooth, to a periodic Kármán vortex street, to
- * turbulent. Everything that would dilute that (viscosity, obstacle shape and
- * position, visualization mode, grid resolution) is left at its default here and
- * exposed on the Lab screen instead. They are still real Properties on the
- * shared FluidModel, so the view and the solver treat both screens identically.
+ * turbulent. Everything that would dilute that (viscosity, obstacle shape,
+ * visualization mode) is left at its default here and exposed on the Lab
+ * screen instead. They are still real Properties on the shared FluidModel,
+ * so the view and the solver treat both screens identically.
  */
 import type { TModel } from "scenerystack/joist";
 import { FluidModel } from "../../common/model/FluidModel.js";
@@ -23,9 +24,13 @@ export class IntroModel implements TModel {
   public readonly timer = new TimeModel(true);
 
   public constructor(preferences: FluidDynamicsPreferencesModel) {
-    // Solver accuracy is a preference rather than a screen control, so the model
-    // subscribes to it here instead of owning it.
+    // Solver accuracy, vortex detail, dye fade and grid resolution are
+    // preferences rather than screen controls, so the model subscribes to them
+    // here instead of owning them.
     this.fluid.attachSolverQuality(preferences.highQualitySolverProperty);
+    this.fluid.attachVorticity(preferences.vorticityProperty);
+    this.fluid.attachDyeDissipation(preferences.dyeDissipationProperty);
+    this.fluid.attachGridResolution(preferences.gridResolutionProperty);
   }
 
   public reset(): void {

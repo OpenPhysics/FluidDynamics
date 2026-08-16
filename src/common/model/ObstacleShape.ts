@@ -12,9 +12,16 @@
  * `erasableSyntaxOnly` rules out a TS enum, so this is an as-const union.
  */
 
-export const OBSTACLE_SHAPES = ["none", "cylinder", "plate", "airfoil"] as const;
+export const OBSTACLE_SHAPES = ["none", "cylinder", "plate", "airfoil", "ellipse"] as const;
 
 export type ObstacleShape = (typeof OBSTACLE_SHAPES)[number];
+
+/**
+ * The shapes the Lab screen offers. The ellipse at zero focal separation *is*
+ * the disk, so offering "cylinder" beside it would be the same body twice; the
+ * Intro screen keeps the cylinder, which it never lets the learner change.
+ */
+export const LAB_OBSTACLE_SHAPES = ["none", "ellipse", "plate", "airfoil"] as const;
 
 /**
  * Numeric code for a shape, as written into the uniform buffer.

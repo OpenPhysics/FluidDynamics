@@ -15,8 +15,10 @@
  */
 
 import { BooleanProperty, DerivedProperty, NumberProperty, Property, type TReadOnlyProperty } from "scenerystack/axon";
-import { Vector2Property } from "scenerystack/dot";
+import { Range, Vector2Property } from "scenerystack/dot";
 import {
+  AIRFOIL_THICKNESS_DEFAULT,
+  AIRFOIL_THICKNESS_RANGE,
   ANGLE_OF_ATTACK_DEFAULT,
   ANGLE_OF_ATTACK_RANGE,
   DYE_DISSIPATION_DEFAULT,
@@ -26,6 +28,7 @@ import {
   OBSTACLE_CENTER_DEFAULT,
   OBSTACLE_DIAMETER_DEFAULT,
   OBSTACLE_DIAMETER_RANGE,
+  OBSTACLE_FOCAL_MAX_FRACTION,
   obstacleDragBounds,
   PRESSURE_ITERATIONS_DEFAULT,
   PRESSURE_ITERATIONS_HIGH,
@@ -41,8 +44,18 @@ import {
 import fluidDynamicsQueryParameters from "../../preferences/fluidDynamicsQueryParameters.js";
 import type { GridResolution } from "../gpu/FluidGridSpec.js";
 import { classifyFlowRegime, computeReynoldsNumber, type FlowRegime } from "./FlowRegime.js";
+import { maxFocalRadius } from "./ObstacleGeometry.js";
 import type { ObstacleShape } from "./ObstacleShape.js";
 import type { VisualizationMode } from "./VisualizationMode.js";
+
+type FluidModelOptions = {
+  /**
+   * Shape the screen starts with. The Intro screen keeps the cylinder it has
+   * always shown; the Lab starts on the ellipse, which at zero focal
+   * separation is the same disk.
+   */
+  readonly initialObstacleShape?: ObstacleShape;
+};
 
 export class FluidModel {
   /** Inflow speed U at the left boundary, in m/s. */
@@ -60,20 +73,48 @@ export class FluidModel {
   public readonly obstacleShapeProperty: Property<ObstacleShape>;
 
   /**
-   * Angle of attack of the plate and the airfoil, in degrees — the tilt of the
-   * body's chord relative to the oncoming flow. No effect on the cylinder or on
-   * "no obstacle", which have no chord to tilt.
+   * Angle of attack of the plate, airfoil and ellipse, in degrees — the tilt of
+   * the body's chord (for the ellipse, its major axis) relative to the oncoming
+   * flow. No effect on the cylinder or on "no obstacle", which have no chord
+   * to tilt.
    */
   public readonly angleOfAttackProperty: NumberProperty;
 
-  /** Strength of the vorticity-confinement correction. See FluidDynamicsConstants. */
+  /**
+   * Half the distance between the ellipse's two foci, in metres from its
+   * centre. Zero collapses the ellipse to a disk; the drag handles on the
+   * focal points write here and read it back. No effect on the other shapes.
+   */
+  public readonly obstacleFocalRadiusProperty: NumberProperty;
+
+  /**
+   * Airfoil thickness as a fraction of chord (the t in a NACA 00xx section).
+   * No effect on the other shapes.
+   */
+  public readonly airfoilThicknessProperty: NumberProperty;
+
+  /**
+   * Strength of the vorticity-confinement correction. See FluidDynamicsConstants.
+   *
+   * Preference-backed: the value is owned by Preferences → Simulation and pushed
+   * here by {@link attachVorticity}, so Reset All does not touch it.
+   */
   public readonly vorticityProperty: NumberProperty;
 
-  /** Fraction of dye remaining after one second. */
+  /**
+   * Fraction of dye remaining after one second. Preference-backed like
+   * vorticityProperty: the value is owned by Preferences → Simulation and
+   * pushed here by {@link attachDyeDissipation}, so Reset All does not touch it.
+   */
   public readonly dyeDissipationProperty: NumberProperty;
 
   public readonly visualizationModeProperty: Property<VisualizationMode>;
 
+  /**
+   * Solver grid resolution. Preference-backed like vorticityProperty: the value
+   * is owned by Preferences → Simulation and pushed here by
+   * {@link attachGridResolution}, so Reset All does not touch it.
+   */
   public readonly gridResolutionProperty: Property<GridResolution>;
 
   /** Jacobi iterations in the pressure projection. */
@@ -107,9 +148,14 @@ export class FluidModel {
 
   private isDisposed = false;
   private detachSolverQuality: (() => void) | null = null;
+  private detachVorticity: (() => void) | null = null;
+  private detachDyeDissipation: (() => void) | null = null;
+  private detachGridResolution: (() => void) | null = null;
   private detachResizeClamp: (() => void) | null = null;
 
-  public constructor() {
+  public constructor(providedOptions?: FluidModelOptions) {
+    const options = { initialObstacleShape: "cylinder" as ObstacleShape, ...providedOptions };
+
     this.flowSpeedProperty = new NumberProperty(FLOW_SPEED_DEFAULT, {
       range: FLOW_SPEED_RANGE,
       units: "m/s",
@@ -128,11 +174,23 @@ export class FluidModel {
 
     this.obstacleCenterProperty = new Vector2Property(OBSTACLE_CENTER_DEFAULT);
 
-    this.obstacleShapeProperty = new Property<ObstacleShape>("cylinder");
+    this.obstacleShapeProperty = new Property<ObstacleShape>(options.initialObstacleShape);
 
     this.angleOfAttackProperty = new NumberProperty(ANGLE_OF_ATTACK_DEFAULT, {
       range: ANGLE_OF_ATTACK_RANGE,
       units: "\u00B0",
+    });
+
+    // The range spans every separation the largest body allows; a smaller body
+    // tightens it in the resize listener below, exactly as its centre's drag
+    // bounds tighten.
+    this.obstacleFocalRadiusProperty = new NumberProperty(0, {
+      range: new Range(0, maxFocalRadius(OBSTACLE_DIAMETER_RANGE.max, OBSTACLE_FOCAL_MAX_FRACTION)),
+      units: "m",
+    });
+
+    this.airfoilThicknessProperty = new NumberProperty(AIRFOIL_THICKNESS_DEFAULT, {
+      range: AIRFOIL_THICKNESS_RANGE,
     });
 
     this.vorticityProperty = new NumberProperty(VORTICITY_DEFAULT, { range: VORTICITY_RANGE });
@@ -162,12 +220,17 @@ export class FluidModel {
 
     // Dragging constrains the centre to where the current body fits (see
     // ObstacleHandleNode), but resizing can strand a body somewhere it no
-    // longer fits: growing it with the slider while parked near a wall would
+    // longer fits: growing it with a handle while parked near a wall would
     // push the edge through the wall. So a diameter change re-clamps the
-    // centre, sliding the body inward as it grows.
+    // centre, sliding the body inward as it grows — and re-clamps the focal
+    // separation, which cannot exceed what a body of this size can hold.
     const resizeListener = (diameter: number): void => {
       this.obstacleCenterProperty.value = obstacleDragBounds(diameter).getConstrainedPoint(
         this.obstacleCenterProperty.value,
+      );
+      this.obstacleFocalRadiusProperty.value = Math.min(
+        this.obstacleFocalRadiusProperty.value,
+        maxFocalRadius(diameter, OBSTACLE_FOCAL_MAX_FRACTION),
       );
     };
     this.obstacleDiameterProperty.link(resizeListener);
@@ -194,6 +257,43 @@ export class FluidModel {
     this.detachSolverQuality = () => highQualityProperty.unlink(listener);
   }
 
+  /**
+   * Binds the vorticity-confinement strength to its preference. Reset All does
+   * not reset vorticityProperty: the preference stays put across a reset, and
+   * re-syncing the mirror would otherwise desync from it.
+   */
+  public attachVorticity(vorticityProperty: TReadOnlyProperty<number>): void {
+    const listener = (vorticity: number): void => {
+      this.vorticityProperty.value = vorticity;
+    };
+    vorticityProperty.link(listener);
+    this.detachVorticity = () => vorticityProperty.unlink(listener);
+  }
+
+  /**
+   * Binds the dye dissipation to its preference. Reset All does not reset
+   * dyeDissipationProperty, for the same reason as attachVorticity.
+   */
+  public attachDyeDissipation(dyeDissipationProperty: TReadOnlyProperty<number>): void {
+    const listener = (dissipation: number): void => {
+      this.dyeDissipationProperty.value = dissipation;
+    };
+    dyeDissipationProperty.link(listener);
+    this.detachDyeDissipation = () => dyeDissipationProperty.unlink(listener);
+  }
+
+  /**
+   * Binds the solver grid resolution to its preference. Reset All does not
+   * reset gridResolutionProperty, for the same reason as attachVorticity.
+   */
+  public attachGridResolution(gridResolutionProperty: TReadOnlyProperty<GridResolution>): void {
+    const listener = (resolution: GridResolution): void => {
+      this.gridResolutionProperty.value = resolution;
+    };
+    gridResolutionProperty.link(listener);
+    this.detachGridResolution = () => gridResolutionProperty.unlink(listener);
+  }
+
   /** Obstacle half-size in metres, as written into the shader uniform. */
   public get obstacleRadius(): number {
     return this.obstacleDiameterProperty.value / 2;
@@ -201,7 +301,7 @@ export class FluidModel {
 
   /**
    * Angle of attack in radians, as written into the shader uniform. The model
-   * stores degrees because that is what the slider shows; the shader wants
+   * stores degrees because that is what the handles write; the shader wants
    * radians because sin and cos do.
    */
   public get obstacleAngle(): number {
@@ -215,10 +315,12 @@ export class FluidModel {
     this.obstacleCenterProperty.reset();
     this.obstacleShapeProperty.reset();
     this.angleOfAttackProperty.reset();
-    this.vorticityProperty.reset();
-    this.dyeDissipationProperty.reset();
+    this.obstacleFocalRadiusProperty.reset();
+    this.airfoilThicknessProperty.reset();
+    // vorticityProperty, dyeDissipationProperty and gridResolutionProperty are
+    // deliberately not reset: they mirror Preferences → Simulation, which Reset
+    // All does not touch.
     this.visualizationModeProperty.reset();
-    this.gridResolutionProperty.reset();
     this.pressureIterationsProperty.reset();
     this.rulerPositionProperty.reset();
     this.rulerVisibleProperty.reset();
@@ -243,6 +345,12 @@ export class FluidModel {
 
     this.detachSolverQuality?.();
     this.detachSolverQuality = null;
+    this.detachVorticity?.();
+    this.detachVorticity = null;
+    this.detachDyeDissipation?.();
+    this.detachDyeDissipation = null;
+    this.detachGridResolution?.();
+    this.detachGridResolution = null;
     this.detachResizeClamp?.();
     this.detachResizeClamp = null;
     this.flowRegimeProperty.dispose();
@@ -254,6 +362,8 @@ export class FluidModel {
     this.vorticityProperty.dispose();
     this.obstacleShapeProperty.dispose();
     this.angleOfAttackProperty.dispose();
+    this.airfoilThicknessProperty.dispose();
+    this.obstacleFocalRadiusProperty.dispose();
     this.obstacleCenterProperty.dispose();
     this.obstacleDiameterProperty.dispose();
     this.kinematicViscosityProperty.dispose();

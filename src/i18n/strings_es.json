@@ -7,7 +7,7 @@
   "a11y": {
     "intro": {
       "screenSummary": {
-        "playArea": "El área de juego es un canal donde el fluido corre de izquierda a derecha alrededor de un cilindro. Se añade colorante en bandas en el borde izquierdo para hacer visible el flujo.",
+        "playArea": "El área de juego es un canal donde el fluido corre de izquierda a derecha alrededor de un cilindro que puedes mover y redimensionar. Se añade colorante en bandas en el borde izquierdo para hacer visible el flujo.",
         "controlArea": "El área de control tiene un control deslizante de velocidad del flujo, botones de reproducir y pausar, una caja de herramientas con una cinta métrica y una regla, y un botón Restablecer todo que devuelve la simulación a su estado inicial.",
         "interactionHint": "Cambia la velocidad del flujo y observa cómo cambia la estela detrás del cilindro. Arrastra dentro del canal para empujar el fluido tú mismo."
       }
@@ -15,7 +15,7 @@
     "lab": {
       "screenSummary": {
         "playArea": "El área de juego es un canal donde el fluido corre de izquierda a derecha alrededor de un obstáculo que puedes mover, redimensionar, cambiar de forma e inclinar. El campo puede mostrar colorante, rapidez, vorticidad o presión.",
-        "controlArea": "El área de control tiene controles deslizantes para la velocidad del flujo, la viscosidad, el tamaño del obstáculo, el ángulo de ataque, el detalle de vórtices y el desvanecimiento del colorante, selectores para la forma del obstáculo, el campo mostrado y la resolución de la cuadrícula, botones de reproducir y pausar, una caja de herramientas con una cinta métrica y una regla, y un botón Restablecer todo.",
+        "controlArea": "El área de control tiene controles deslizantes para la velocidad del flujo y la viscosidad, selectores para la forma del obstáculo y el campo mostrado, botones de reproducir y pausar, una caja de herramientas con una cinta métrica y una regla, y un botón Restablecer todo.",
         "interactionHint": "Aumenta la velocidad o reduce la viscosidad para elevar el número de Reynolds. Cambia a la vista de vorticidad para distinguir con mayor claridad cada vórtice."
       }
     },
@@ -27,9 +27,6 @@
       "flowSpeedHelpText": "Aumenta la velocidad para elevar el número de Reynolds y desestabilizar la estela.",
       "viscosity": "Viscosidad",
       "viscosityHelpText": "Un fluido más espeso amortigua la estela y reduce el número de Reynolds.",
-      "obstacleSize": "Tamaño del obstáculo",
-      "angleOfAttack": "Ángulo de ataque",
-      "angleOfAttackHelpText": "Inclina la placa plana o el perfil respecto al flujo. No tiene ningún efecto sobre el cilindro.",
       "obstacleShape": "Forma del obstáculo",
       "visualization": "Campo a mostrar",
       "vorticity": "Detalle de vórtices",
@@ -37,6 +34,12 @@
       "resolution": "Resolución de la cuadrícula",
       "obstacleHandle": "Posición del obstáculo",
       "obstacleHandleHelpText": "Arrastra para mover el obstáculo dentro del canal.",
+      "sizeAngleHandle": "Tamaño y ángulo del obstáculo",
+      "sizeAngleHandleHelpText": "Arrastra el tirador hacia o lejos del obstáculo para redimensionarlo; arrástralo alrededor del obstáculo para inclinarlo. Las flechas arriba y abajo redimensionan; izquierda y derecha inclinan.",
+      "focusHandle": "Foco de la elipse",
+      "focusHandleHelpText": "Arrastra un foco hacia afuera para estirar la elipse, o hacia el centro para volver a un disco. Las flechas arriba y abajo estiran; izquierda y derecha rotan.",
+      "thicknessHandle": "Grosor del perfil",
+      "thicknessHandleHelpText": "Arrastra el tirador hacia arriba o hacia abajo para engrosar o afinar el perfil; las flechas hacen lo mismo.",
       "toolboxTapeName": "Cinta métrica",
       "toolboxTapeHelpText": "Pulsa para sacar la cinta métrica de la caja de herramientas o para guardarla. Arrástrala directamente para colocarla.",
       "toolboxRulerName": "Regla",
@@ -48,24 +51,19 @@
   "controls": {
     "flowSpeed": "Velocidad del flujo",
     "viscosity": "Viscosidad",
-    "obstacleSize": "Tamaño del obstáculo",
-    "angleOfAttack": "Ángulo de ataque",
     "obstacleShape": "Obstáculo",
     "visualization": "Mostrar",
-    "vorticity": "Detalle de vórtices",
-    "dyeFade": "Desvanecimiento del colorante",
-    "resolution": "Cuadrícula",
     "speedValuePattern": "{{value}} m/s",
-    "sizeValuePattern": "{{value}} m",
-    "angleValuePattern": "{{value}}°",
     "viscosityValuePattern": "{{value}} m²/s",
-    "reynoldsPattern": "Re ≈ {{value}}"
+    "reynoldsPattern": "Re ≈ {{value}}",
+    "scaleBarPattern": "{{value}} m"
   },
   "shapes": {
     "none": "Ninguno",
     "cylinder": "Cilindro",
     "plate": "Placa plana",
-    "airfoil": "Perfil alar"
+    "airfoil": "Perfil alar",
+    "ellipse": "Elipse"
   },
   "visualizations": {
     "dye": "Colorante",
@@ -94,6 +92,9 @@
   },
   "preferences": {
     "title": "Simulación",
-    "highQualitySolver": "Mayor precisión del solucionador"
+    "highQualitySolver": "Mayor precisión del solucionador",
+    "vorticity": "Detalle de vórtices",
+    "dyeFade": "Desvanecimiento del colorante",
+    "gridResolution": "Resolución de la cuadrícula"
   }
 }

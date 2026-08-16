@@ -17,6 +17,7 @@ src/
       FluidModel.ts              all flow parameters + derived Re and regime
       FlowRegime.ts              regime vocabulary and classification
       ObstacleShape.ts           as-const union + shader codes
+      ObstacleGeometry.ts        pure handle math: angle wrap, focal cap, NACA mirror
       VisualizationMode.ts       as-const union + shader codes
     gpu/
       webgpuSupport.ts           adapter/device acquisition, device-loss reporting
@@ -31,7 +32,11 @@ src/
       FluidFieldNode.ts          the Scenery ↔ WebGPU bridge
       FluidControlPanel.ts       sliders and pickers; option-selected control set
       FlowReadoutNode.ts         Reynolds number and regime
+      FluidScaleBarNode.ts       the fixed |—–—| 0.1 m scale bar on the readout row
       ObstacleHandleNode.ts      invisible drag/keyboard handle over the body
+      ObstacleSizeAngleHandleNode.ts, ObstacleFociHandleNode.ts,
+      ObstacleThicknessHandleNode.ts
+                                  visible knobs: size+tilt, ellipse foci, foil thickness
       FluidRulerNode.ts          draggable 1-metre ruler (drag + keyboard + PDOM)
       ToolboxPanel.ts            toolbox the tape and ruler come from and return to
       WebGPUUnavailableNode.ts   the fallback message
@@ -151,17 +156,48 @@ frame for an answer that changes only when the learner drags the body.
 
 So `mask.wgsl` writes the signed distance into an r32float texture, and every
 compute kernel reads it through the `isSolidAt` helper in `common.wgsl`. It is
-re-baked when the obstacle's shape, size or position changes, and when the grid
-is rebuilt — `WebGPUFluidEngine.markMask` does the comparison, and the dispatch
-is the first thing in the compute pass so everything downstream sees it. Within a
-compute pass each dispatch is its own usage scope, so writing the texture in one
-dispatch and sampling it in the next is legal.
+re-baked when the obstacle's shape, size, position, tilt, eccentricity or foil
+thickness changes, and when the grid is rebuilt — `WebGPUFluidEngine.markMask`
+does the comparison, and the dispatch is the first thing in the compute pass so
+everything downstream sees it. Within a compute pass each dispatch is its own
+usage scope, so writing the texture in one dispatch and sampling it in the next
+is legal.
 
 Two things to keep in mind. A freshly created texture reads as all zeros, which
 the solver would take for a body filling the whole channel — hence `isMaskStale`
 starts true and `createFields` sets it again. And the display pass deliberately
 does *not* use the mask: it samples between cells and needs the analytic
 function's sub-cell accuracy for the body's outline.
+
+## The obstacle is shaped by handles, not sliders
+
+Size, angle of attack, the ellipse's eccentricity and the foil's thickness are
+direct-manipulation quantities: each is a knob on the body whose polar or normal
+offset *is* the model value, written straight into the same Properties the
+solver reads. No slider duplicates them, because a second interface to the same
+number invites the picture and the number to disagree.
+
+- `ObstacleSizeAngleHandleNode` — one knob on the leading edge. Distance from
+  the body's centre sets the diameter; the direction sets the angle of attack
+  (folded into ±90° by the chord's 180° symmetry, so dragging over the top
+  keeps going). On the disk the tilt is inert, so the same knob is the Intro
+  screen's radius handle.
+- `ObstacleFociHandleNode` — two mirrored knobs on the ellipse's foci. Their
+  separation is the focal half-distance c (zero collapses the body to the disk
+  it started as); their line is the major axis, which *is* the angle of attack.
+  Shrinking the body re-clamps c in `FluidModel`, exactly as it re-clamps the
+  centre's drag bounds.
+- `ObstacleThicknessHandleNode` — a knob riding the foil's thickest point,
+  dragged along the chord's normal. Its placement uses the same NACA polynomial
+  as the shader (`ObstacleGeometry.ts` mirrors it in TypeScript), so the knob
+  always sits exactly on the surface being stretched.
+
+Touching the body itself still translates it — that is `ObstacleHandleNode`,
+the transparent hit circle, which the knobs sit above so their small targets
+win the hit test. Every knob is focusable, with arrow keys mapped to its
+quantities (Shift for fine steps) so nothing is pointer-only. Handle visibility
+is shape-driven and linked only *after* the nodes join the scene graph, for the
+same PDOM reason as the toolbox tools.
 
 ## The bind layout contract
 
@@ -192,7 +228,7 @@ WebGPU validates buffer sizes but not struct layouts. If the offsets in
 every shader silently reads a shifted field and the failure looks like a physics
 bug. `tests/FluidUniforms.test.ts` parses the WGSL struct and asserts that its
 member order matches the offset table, that alignment rules are satisfied, and
-that the members exactly fill the 128-byte buffer.
+that the members exactly fill the 144-byte buffer.
 
 ## Shaders are loaded with `?raw`
 
@@ -245,6 +281,12 @@ All empties the toolbox with no view-side reset code. The ruler's length and
 tick spacing are computed from the shared `modelViewTransform`, so its scale
 cannot drift from the channel's.
 
+The `FluidScaleBarNode` under the field follows the same rule for the same
+reason: its pixel length is `modelToViewDeltaX(SCALE_BAR_LENGTH_M)`, never a
+hard-coded width. It is not pickable and carries no parallel-DOM content —
+like the Reynolds readout beside it, it is static visual text, and the ruler
+is the interactive way to measure.
+
 ## Disposal
 
 `FluidModel.dispose()` is guarded by an `isDisposed` flag. A plain `Property`
@@ -266,6 +308,7 @@ throws during ParallelDOM teardown. It drains a `disposers` array instead.
 | `tests/FluidGridSpec.test.ts` | dispatch arithmetic, square cells, uv mapping |
 | `tests/FlowRegime.test.ts` | Reynolds thresholds and their boundaries |
 | `tests/FluidModel.test.ts` | derived Re, reset, reachable regimes, shader codes |
+| `tests/ObstacleGeometry.test.ts` | handle math: angle wrap, focal cap, NACA mirror |
 | `tests/memory-leak.test.ts` | WeakRef dispose regression for both models |
 | `tests/fuzz/engine.spec.ts` | **the solver itself**, in a real browser |
 | `tests/fuzz/fuzz.spec.ts` | joist `?fuzz` smoke |

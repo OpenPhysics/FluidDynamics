@@ -268,6 +268,48 @@ export function obstacleDragBounds(diameter: number): Bounds2 {
 export const OBSTACLE_KEYBOARD_SPEED_MPS = 0.4;
 
 /**
+ * Largest focal half-separation the ellipse may carry, as a fraction of its
+ * semi-major axis a = D/2. At the cap the minor axis is still b ≈ 0.31·a, so
+ * the slimmest ellipse the learner can pull remains something to see and grab.
+ */
+export const OBSTACLE_FOCAL_MAX_FRACTION = 0.95;
+
+/**
+ * Maximum airfoil thickness as a fraction of chord. The lower end is not zero:
+ * a vanished foil is the plate's job (its own shape), and a hairline body has
+ * no surface left to hang the thickness handle on. 0.12 keeps the NACA 0012
+ * the shader previously carried as a constant.
+ */
+export const AIRFOIL_THICKNESS_RANGE = new Range(0.04, 0.3);
+export const AIRFOIL_THICKNESS_DEFAULT = 0.12;
+
+/**
+ * Where the NACA thickness distribution peaks, as a fraction of chord from the
+ * leading edge. The thickness handle sits on the thickest point of the upper
+ * surface, so dragging it is dragging the body's own maximum.
+ */
+export const AIRFOIL_MAX_THICKNESS_STATION = 0.3;
+
+// ── Handle keyboard steps ─────────────────────────────────────────────────────
+// One press of an arrow key on a handle moves its quantity by this much; Shift
+// divides by HANDLE_KEYBOARD_STEP_FACTOR for the fine adjustments.
+
+/** How much one press of ↑/↓ on the size handle changes D, in metres. */
+export const SIZE_KEYBOARD_STEP_M = 0.01;
+
+/** How much one press of ←/→ on a handle rotates the body, in degrees. */
+export const ANGLE_KEYBOARD_STEP_DEG = 1;
+
+/** How much one press of ↑/↓ on a focus handle moves the focus, in metres. */
+export const FOCAL_KEYBOARD_STEP_M = 0.005;
+
+/** How much one press of ↑/↓ on the thickness handle changes the fraction. */
+export const THICKNESS_KEYBOARD_STEP = 0.01;
+
+/** Shift-press fineness divisor shared by every handle. */
+export const HANDLE_KEYBOARD_STEP_FACTOR = 5;
+
+/**
  * Vorticity-confinement strength, dimensionless.
  *
  * Semi-Lagrangian advection is stable but dissipative: it damps exactly the
@@ -364,6 +406,25 @@ export const TAPE_TAKEOUT_OFFSET_PX = new Vector2(30, -60);
 /** Horizontal gap between the toolbox's icons, in screen pixels. */
 export const TOOLBOX_ICON_SPACING = 12;
 
+// ── Scale bar ─────────────────────────────────────────────────────────────────
+
+/**
+ * Length the scale bar under the field spans, in metres. 0.1 m matches the
+ * ruler's labelled ticks and renders 35 px at the field's scale — long enough
+ * to read as a scale, short enough to sit quietly at the end of the readout
+ * row.
+ */
+export const SCALE_BAR_LENGTH_M = 0.1;
+
+/** Height of the scale bar's end ticks, in screen pixels. */
+export const SCALE_BAR_TICK_HEIGHT_PX = 8;
+
+/** Stroke width of the scale bar and its ticks, in screen pixels. */
+export const SCALE_BAR_STROKE_WIDTH_PX = 2;
+
+/** Gap between the scale bar's last tick and its label, in screen pixels. */
+export const SCALE_BAR_LABEL_GAP_PX = 6;
+
 // ── Flow-regime thresholds (Reynolds number, dimensionless) ───────────────────
 // Classical transition values for flow past a circular cylinder. See
 // FlowRegime.ts for how they are applied and doc/model.md for their limits.
@@ -440,6 +501,10 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   TOOLBOX_RETURN_TOLERANCE_PX,
   TAPE_TAKEOUT_OFFSET_PX,
   TOOLBOX_ICON_SPACING,
+  SCALE_BAR_LENGTH_M,
+  SCALE_BAR_TICK_HEIGHT_PX,
+  SCALE_BAR_STROKE_WIDTH_PX,
+  SCALE_BAR_LABEL_GAP_PX,
   RE_SEPARATION,
   RE_SHEDDING_ONSET,
   RE_TURBULENT_ONSET,

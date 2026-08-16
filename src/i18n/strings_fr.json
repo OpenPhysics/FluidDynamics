@@ -7,7 +7,7 @@
   "a11y": {
     "intro": {
       "screenSummary": {
-        "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un cylindre. Du colorant est ajouté en bandes au bord gauche pour rendre l'écoulement visible.",
+        "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un cylindre que vous pouvez déplacer et redimensionner. Du colorant est ajouté en bandes au bord gauche pour rendre l'écoulement visible.",
         "controlArea": "La zone de contrôle comporte un curseur de vitesse d'écoulement, des boutons lecture et pause, une boîte à outils avec un ruban à mesurer et une règle, et un bouton Tout réinitialiser qui ramène la simulation à son état initial.",
         "interactionHint": "Modifiez la vitesse d'écoulement et observez comment le sillage derrière le cylindre change. Faites glisser dans le canal pour pousser le fluide vous-même."
       }
@@ -15,7 +15,7 @@
     "lab": {
       "screenSummary": {
         "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un obstacle que vous pouvez déplacer, redimensionner, remodeler et incliner. Le champ peut afficher le colorant, la vitesse, la vorticité ou la pression.",
-        "controlArea": "La zone de contrôle comporte des curseurs pour la vitesse d'écoulement, la viscosité, la taille de l'obstacle, l'angle d'attaque, le détail des tourbillons et l'estompage du colorant, des sélecteurs pour la forme de l'obstacle, le champ affiché et la résolution de la grille, des boutons lecture et pause, une boîte à outils avec un ruban à mesurer et une règle, et un bouton Tout réinitialiser.",
+        "controlArea": "La zone de contrôle comporte des curseurs pour la vitesse d'écoulement et la viscosité, des sélecteurs pour la forme de l'obstacle et le champ affiché, des boutons lecture et pause, une boîte à outils avec un ruban à mesurer et une règle, et un bouton Tout réinitialiser.",
         "interactionHint": "Augmentez la vitesse ou réduisez la viscosité pour élever le nombre de Reynolds. Passez à la vue de vorticité pour distinguer le plus clairement chaque tourbillon."
       }
     },
@@ -27,9 +27,6 @@
       "flowSpeedHelpText": "Augmentez la vitesse pour élever le nombre de Reynolds et déstabiliser le sillage.",
       "viscosity": "Viscosité",
       "viscosityHelpText": "Un fluide plus épais amortit le sillage et abaisse le nombre de Reynolds.",
-      "obstacleSize": "Taille de l'obstacle",
-      "angleOfAttack": "Angle d'attaque",
-      "angleOfAttackHelpText": "Inclinez la plaque plane ou le profil par rapport à l'écoulement. Cela n'a aucun effet sur le cylindre.",
       "obstacleShape": "Forme de l'obstacle",
       "visualization": "Champ à afficher",
       "vorticity": "Détail des tourbillons",
@@ -37,6 +34,12 @@
       "resolution": "Résolution de la grille",
       "obstacleHandle": "Position de l'obstacle",
       "obstacleHandleHelpText": "Faites glisser pour déplacer l'obstacle dans le canal.",
+      "sizeAngleHandle": "Taille et angle de l'obstacle",
+      "sizeAngleHandleHelpText": "Faites glisser la poignée vers ou loin de l'obstacle pour le redimensionner ; faites-la pivoter autour de l'obstacle pour l'incliner. Les flèches haut et bas redimensionnent, gauche et droite inclinent.",
+      "focusHandle": "Foyer de l'ellipse",
+      "focusHandleHelpText": "Faites glisser un foyer vers l'extérieur pour étirer l'ellipse, ou vers le centre pour retrouver un disque. Les flèches haut et bas étirent, gauche et droite font pivoter.",
+      "thicknessHandle": "Épaisseur du profil",
+      "thicknessHandleHelpText": "Faites glisser la poignée vers le haut ou le bas pour épaissir ou amincir le profil ; les flèches font de même.",
       "toolboxTapeName": "Ruban à mesurer",
       "toolboxTapeHelpText": "Appuyez pour sortir le ruban à mesurer de la boîte à outils ou pour le ranger. Faites-le glisser directement pour le placer.",
       "toolboxRulerName": "Règle",
@@ -48,24 +51,19 @@
   "controls": {
     "flowSpeed": "Vitesse d'écoulement",
     "viscosity": "Viscosité",
-    "obstacleSize": "Taille de l'obstacle",
-    "angleOfAttack": "Angle d'attaque",
     "obstacleShape": "Obstacle",
     "visualization": "Afficher",
-    "vorticity": "Détail des tourbillons",
-    "dyeFade": "Estompage du colorant",
-    "resolution": "Grille",
     "speedValuePattern": "{{value}} m/s",
-    "sizeValuePattern": "{{value}} m",
-    "angleValuePattern": "{{value}}°",
     "viscosityValuePattern": "{{value}} m²/s",
-    "reynoldsPattern": "Re ≈ {{value}}"
+    "reynoldsPattern": "Re ≈ {{value}}",
+    "scaleBarPattern": "{{value}} m"
   },
   "shapes": {
     "none": "Aucun",
     "cylinder": "Cylindre",
     "plate": "Plaque plane",
-    "airfoil": "Profil d'aile"
+    "airfoil": "Profil d'aile",
+    "ellipse": "Ellipse"
   },
   "visualizations": {
     "dye": "Colorant",
@@ -94,6 +92,9 @@
   },
   "preferences": {
     "title": "Simulation",
-    "highQualitySolver": "Précision accrue du solveur"
+    "highQualitySolver": "Précision accrue du solveur",
+    "vorticity": "Détail des tourbillons",
+    "dyeFade": "Estompage du colorant",
+    "gridResolution": "Résolution de la grille"
   }
 }
