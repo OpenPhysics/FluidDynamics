@@ -17,6 +17,8 @@
 import { DerivedProperty, NumberProperty, Property, type TReadOnlyProperty } from "scenerystack/axon";
 import { Vector2Property } from "scenerystack/dot";
 import {
+  ANGLE_OF_ATTACK_DEFAULT,
+  ANGLE_OF_ATTACK_RANGE,
   DYE_DISSIPATION_DEFAULT,
   DYE_DISSIPATION_RANGE,
   FLOW_SPEED_DEFAULT,
@@ -53,6 +55,13 @@ export class FluidModel {
   public readonly obstacleCenterProperty: Vector2Property;
 
   public readonly obstacleShapeProperty: Property<ObstacleShape>;
+
+  /**
+   * Angle of attack of the plate and the airfoil, in degrees — the tilt of the
+   * body's chord relative to the oncoming flow. No effect on the cylinder or on
+   * "no obstacle", which have no chord to tilt.
+   */
+  public readonly angleOfAttackProperty: NumberProperty;
 
   /** Strength of the vorticity-confinement correction. See FluidDynamicsConstants. */
   public readonly vorticityProperty: NumberProperty;
@@ -97,6 +106,11 @@ export class FluidModel {
     this.obstacleCenterProperty = new Vector2Property(OBSTACLE_CENTER_DEFAULT);
 
     this.obstacleShapeProperty = new Property<ObstacleShape>("cylinder");
+
+    this.angleOfAttackProperty = new NumberProperty(ANGLE_OF_ATTACK_DEFAULT, {
+      range: ANGLE_OF_ATTACK_RANGE,
+      units: "\u00B0",
+    });
 
     this.vorticityProperty = new NumberProperty(VORTICITY_DEFAULT, { range: VORTICITY_RANGE });
 
@@ -156,12 +170,22 @@ export class FluidModel {
     return this.obstacleDiameterProperty.value / 2;
   }
 
+  /**
+   * Angle of attack in radians, as written into the shader uniform. The model
+   * stores degrees because that is what the slider shows; the shader wants
+   * radians because sin and cos do.
+   */
+  public get obstacleAngle(): number {
+    return (this.angleOfAttackProperty.value * Math.PI) / 180;
+  }
+
   public reset(): void {
     this.flowSpeedProperty.reset();
     this.kinematicViscosityProperty.reset();
     this.obstacleDiameterProperty.reset();
     this.obstacleCenterProperty.reset();
     this.obstacleShapeProperty.reset();
+    this.angleOfAttackProperty.reset();
     this.vorticityProperty.reset();
     this.dyeDissipationProperty.reset();
     this.visualizationModeProperty.reset();
@@ -195,6 +219,7 @@ export class FluidModel {
     this.dyeDissipationProperty.dispose();
     this.vorticityProperty.dispose();
     this.obstacleShapeProperty.dispose();
+    this.angleOfAttackProperty.dispose();
     this.obstacleCenterProperty.dispose();
     this.obstacleDiameterProperty.dispose();
     this.kinematicViscosityProperty.dispose();

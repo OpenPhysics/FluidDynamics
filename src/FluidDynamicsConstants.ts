@@ -203,6 +203,22 @@ export const OBSTACLE_DIAMETER_RANGE = new Range(0.05, 0.8);
 export const OBSTACLE_DIAMETER_DEFAULT = 0.15;
 
 /**
+ * Angle of attack of the plate and the airfoil, in degrees — the angle between
+ * the body's chord and the oncoming flow. Positive tilts the leading edge up.
+ *
+ * The range spans fully streamlined (0° is the plate lying along the flow) to
+ * fully broadside (±90°), which is where the plate sheds at the lowest speed of
+ * the three bodies. The airfoil stalls a little past ±15°, but the slider keeps
+ * going: a wing broadside to the flow is its own kind of bluff body.
+ *
+ * The default matches the 0.14 rad the airfoil previously carried as a fixed
+ * constant in the shader: a small deliberate tilt, so its wake is asymmetric
+ * like a real wing's, and not a value the learner has to find to see anything.
+ */
+export const ANGLE_OF_ATTACK_RANGE = new Range(-90, 90);
+export const ANGLE_OF_ATTACK_DEFAULT = 8;
+
+/**
  * Obstacle centre, in metres from the channel's lower-left corner. Placed a
  * quarter of the way downstream so there is inflow to develop upstream of it
  * and three quarters of the channel for the wake to form in.
@@ -337,6 +353,8 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   VISCOSITY_DEFAULT,
   OBSTACLE_DIAMETER_RANGE,
   OBSTACLE_DIAMETER_DEFAULT,
+  ANGLE_OF_ATTACK_RANGE,
+  ANGLE_OF_ATTACK_DEFAULT,
   OBSTACLE_CENTER_DEFAULT,
   OBSTACLE_DRAG_BOUNDS_M,
   OBSTACLE_CLEARANCE_M,

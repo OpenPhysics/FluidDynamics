@@ -14,8 +14,8 @@
     },
     "lab": {
       "screenSummary": {
-        "playArea": "The play area is a channel of fluid flowing from left to right past an obstacle you can move, resize and reshape. The field can show dye, speed, vorticity or pressure.",
-        "controlArea": "The control area has sliders for flow speed, viscosity, obstacle size, vortex detail and dye fade, pickers for the obstacle shape, the displayed field and the grid resolution, play and pause buttons, and a Reset All button.",
+        "playArea": "The play area is a channel of fluid flowing from left to right past an obstacle you can move, resize, reshape and tilt. The field can show dye, speed, vorticity or pressure.",
+        "controlArea": "The control area has sliders for flow speed, viscosity, obstacle size, angle of attack, vortex detail and dye fade, pickers for the obstacle shape, the displayed field and the grid resolution, play and pause buttons, and a Reset All button.",
         "interactionHint": "Raise the flow speed or lower the viscosity to raise the Reynolds number. Switch to the vorticity view to see individual vortices most clearly."
       }
     },
@@ -28,6 +28,8 @@
       "viscosity": "Viscosity",
       "viscosityHelpText": "Thicker fluid damps the wake and lowers the Reynolds number.",
       "obstacleSize": "Obstacle size",
+      "angleOfAttack": "Angle of attack",
+      "angleOfAttackHelpText": "Tilt the flat plate or airfoil relative to the flow. It has no effect on the cylinder.",
       "obstacleShape": "Obstacle shape",
       "visualization": "Field to display",
       "vorticity": "Vortex detail",
@@ -41,6 +43,7 @@
     "flowSpeed": "Flow Speed",
     "viscosity": "Viscosity",
     "obstacleSize": "Obstacle Size",
+    "angleOfAttack": "Angle of Attack",
     "obstacleShape": "Obstacle",
     "visualization": "Show",
     "vorticity": "Vortex Detail",
@@ -48,6 +51,7 @@
     "resolution": "Grid",
     "speedValuePattern": "{{value}} m/s",
     "sizeValuePattern": "{{value}} m",
+    "angleValuePattern": "{{value}}°",
     "viscosityValuePattern": "{{value}} m²/s",
     "reynoldsPattern": "Re ≈ {{value}}"
   },

@@ -21,9 +21,13 @@ import { Node } from "scenerystack/scenery";
 import { ResetAllButton, TimeControlNode } from "scenerystack/scenery-phet";
 import { ScreenView, type ScreenViewOptions } from "scenerystack/sim";
 import { CONTROL_PANEL_WIDTH, FIELD_VIEW_BOUNDS, SCREEN_VIEW_MARGIN } from "../../FluidDynamicsConstants.js";
-import { FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS, FLAT_RESET_ALL_BUTTON_OPTIONS } from "../FluidDynamicsButtonOptions.js";
+import {
+  FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS,
+  FLAT_RESET_ALL_BUTTON_OPTIONS,
+  TIME_CONTROL_SPEED_RADIO_OPTIONS,
+} from "../FluidDynamicsButtonOptions.js";
 import type { FluidModel } from "../model/FluidModel.js";
-import type { TimeModel } from "../TimeModel.js";
+import { TIME_SPEEDS, type TimeModel } from "../TimeModel.js";
 import { FlowReadoutNode } from "./FlowReadoutNode.js";
 import { FluidControlPanel } from "./FluidControlPanel.js";
 import { FluidFieldNode } from "./FluidFieldNode.js";
@@ -62,9 +66,15 @@ export class FluidScreenView extends ScreenView {
     // The solver needs a GPUDevice, which arrives asynchronously. Until it does,
     // the field paints nothing and the unavailable message stays hidden, so a
     // successful start never flashes an error.
-    this.fluidFieldNode = new FluidFieldNode(model, timer.isPlayingProperty, FIELD_VIEW_BOUNDS, {
-      accessibleParagraph: fluidDescriptionProperty,
-    });
+    this.fluidFieldNode = new FluidFieldNode(
+      model,
+      timer.isPlayingProperty,
+      timer.timeSpeedProperty,
+      FIELD_VIEW_BOUNDS,
+      {
+        accessibleParagraph: fluidDescriptionProperty,
+      },
+    );
     this.addChild(this.fluidFieldNode);
 
     // Above the field, so a press on the body moves it instead of stirring the
@@ -103,6 +113,9 @@ export class FluidScreenView extends ScreenView {
     this.addChild(controlPanel);
 
     const timeControl = new TimeControlNode(timer.isPlayingProperty, {
+      timeSpeedProperty: timer.timeSpeedProperty,
+      timeSpeeds: TIME_SPEEDS,
+      ...TIME_CONTROL_SPEED_RADIO_OPTIONS,
       playPauseStepButtonOptions: {
         ...FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS,
         stepForwardButtonOptions: {

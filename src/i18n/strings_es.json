@@ -14,8 +14,8 @@
     },
     "lab": {
       "screenSummary": {
-        "playArea": "El área de juego es un canal donde el fluido corre de izquierda a derecha alrededor de un obstáculo que puedes mover, redimensionar y cambiar de forma. El campo puede mostrar colorante, rapidez, vorticidad o presión.",
-        "controlArea": "El área de control tiene controles deslizantes para la velocidad del flujo, la viscosidad, el tamaño del obstáculo, el detalle de vórtices y el desvanecimiento del colorante, selectores para la forma del obstáculo, el campo mostrado y la resolución de la cuadrícula, botones de reproducir y pausar, y un botón Restablecer todo.",
+        "playArea": "El área de juego es un canal donde el fluido corre de izquierda a derecha alrededor de un obstáculo que puedes mover, redimensionar, cambiar de forma e inclinar. El campo puede mostrar colorante, rapidez, vorticidad o presión.",
+        "controlArea": "El área de control tiene controles deslizantes para la velocidad del flujo, la viscosidad, el tamaño del obstáculo, el ángulo de ataque, el detalle de vórtices y el desvanecimiento del colorante, selectores para la forma del obstáculo, el campo mostrado y la resolución de la cuadrícula, botones de reproducir y pausar, y un botón Restablecer todo.",
         "interactionHint": "Aumenta la velocidad o reduce la viscosidad para elevar el número de Reynolds. Cambia a la vista de vorticidad para distinguir con mayor claridad cada vórtice."
       }
     },
@@ -28,6 +28,8 @@
       "viscosity": "Viscosidad",
       "viscosityHelpText": "Un fluido más espeso amortigua la estela y reduce el número de Reynolds.",
       "obstacleSize": "Tamaño del obstáculo",
+      "angleOfAttack": "Ángulo de ataque",
+      "angleOfAttackHelpText": "Inclina la placa plana o el perfil respecto al flujo. No tiene ningún efecto sobre el cilindro.",
       "obstacleShape": "Forma del obstáculo",
       "visualization": "Campo a mostrar",
       "vorticity": "Detalle de vórtices",
@@ -41,6 +43,7 @@
     "flowSpeed": "Velocidad del flujo",
     "viscosity": "Viscosidad",
     "obstacleSize": "Tamaño del obstáculo",
+    "angleOfAttack": "Ángulo de ataque",
     "obstacleShape": "Obstáculo",
     "visualization": "Mostrar",
     "vorticity": "Detalle de vórtices",
@@ -48,6 +51,7 @@
     "resolution": "Cuadrícula",
     "speedValuePattern": "{{value}} m/s",
     "sizeValuePattern": "{{value}} m",
+    "angleValuePattern": "{{value}}°",
     "viscosityValuePattern": "{{value}} m²/s",
     "reynoldsPattern": "Re ≈ {{value}}"
   },

@@ -23,14 +23,19 @@
  *   byte 64   pointerPos     vec2
  *   byte 72   pointerDelta   vec2
  *   byte 80   dt             f32   (align 4)
- *   …         eleven more f32, the last of which is `time`
- *   byte 128  end            — a multiple of 16, as the struct's alignment requires
+ *   …         thirteen more f32, the last of which is `time`
+ *   byte 132  — the members end; the struct's alignment rounds it up to 144
+ *   byte 144  end            — a multiple of 16, as the struct's alignment requires
+ *
+ * That final 12 bytes of round-up is why the buffer is 144 bytes while the
+ * members stop at 132: it must be at least the struct's rounded size, and it
+ * must itself be a multiple of 16. The floats past `time` are never written.
  */
 
 import type { FluidGridSpec } from "./FluidGridSpec.js";
 
 /** Size of the uniform buffer in bytes. Must stay a multiple of 16. */
-export const UNIFORM_BUFFER_SIZE = 128;
+export const UNIFORM_BUFFER_SIZE = 144;
 
 /** Size of the uniform buffer in 32-bit words. */
 export const UNIFORM_FLOAT_COUNT = UNIFORM_BUFFER_SIZE / 4;
@@ -57,11 +62,12 @@ export const UNIFORM_OFFSETS = {
   inflowSpeed: 24,
   obstacleRadius: 25,
   obstacleShape: 26,
-  visualization: 27,
-  pointerActive: 28,
-  pointerRadius: 29,
-  velocityScale: 30,
-  time: 31,
+  obstacleAngle: 27,
+  visualization: 28,
+  pointerActive: 29,
+  pointerRadius: 30,
+  velocityScale: 31,
+  time: 32,
 } as const;
 
 /** Everything the shaders need to know about one simulation step. */
@@ -83,6 +89,8 @@ export type FluidUniformValues = {
   readonly inflowSpeed: number;
   readonly obstacleRadius: number;
   readonly obstacleShape: number;
+  /** Angle of attack in radians; see FluidModel.obstacleAngle. */
+  readonly obstacleAngle: number;
   readonly visualization: number;
   readonly pointerActive: boolean;
   readonly pointerRadius: number;
@@ -143,6 +151,7 @@ export class FluidUniforms {
     d[o.inflowSpeed] = values.inflowSpeed;
     d[o.obstacleRadius] = values.obstacleRadius;
     d[o.obstacleShape] = values.obstacleShape;
+    d[o.obstacleAngle] = values.obstacleAngle;
     d[o.visualization] = values.visualization;
     d[o.pointerActive] = values.pointerActive ? 1 : 0;
     d[o.pointerRadius] = values.pointerRadius;

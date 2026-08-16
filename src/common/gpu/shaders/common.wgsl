@@ -6,7 +6,8 @@
 // The SimUniforms struct below is the contract with FluidUniforms.ts: member
 // order here and the float offsets there must agree, and a unit test asserts it.
 // Fields are grouped by alignment (vec4 first, then vec2, then f32) so no member
-// needs implicit padding and the struct is exactly 128 bytes.
+// needs implicit padding. The members occupy 132 bytes; the struct's own
+// alignment rounds that up to 144, which is the uniform buffer's size.
 
 struct SimUniforms {
   // Dye injected at the inflow, in alternating bands. Two colors rather than one
@@ -35,6 +36,9 @@ struct SimUniforms {
   // half the airfoil's chord.
   obstacleRadius : f32,
   obstacleShape  : f32,
+  // Angle of attack of the plate and the airfoil, in radians from the inflow
+  // direction. Positive tilts the leading edge up. The cylinder ignores it.
+  obstacleAngle  : f32,
   visualization  : f32,
   pointerActive  : f32,
   pointerRadius  : f32,
@@ -44,11 +48,6 @@ struct SimUniforms {
   // perturbation in forces.wgsl vary, which is what seeds vortex shedding.
   time           : f32,
 }
-
-// Angle of attack of the airfoil, in radians. Fixed geometry rather than a
-// control: it exists to make the airfoil's wake asymmetric, and exposing it
-// would compete with the Reynolds-number story the sim is actually about.
-const AIRFOIL_ANGLE_OF_ATTACK: f32 = 0.14;
 
 // Maximum thickness of the airfoil as a fraction of chord (a NACA 0012).
 const AIRFOIL_THICKNESS: f32 = 0.12;
@@ -77,17 +76,24 @@ fn boxSDF(d: vec2<f32>, halfExtents: vec2<f32>) -> f32 {
   return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0);
 }
 
+// Rotates a world-frame offset into the chord's frame. The chord's +x axis runs
+// from leading edge to trailing edge, so a positive angle of attack tilts the
+// leading edge up — the sign convention every aerodynamics text uses.
+fn toChordFrame(d: vec2<f32>, alpha: f32) -> vec2<f32> {
+  let c = cos(alpha);
+  let s = sin(alpha);
+  return vec2<f32>(d.x * c - d.y * s, d.x * s + d.y * c);
+}
+
 // Approximate signed distance to a symmetric NACA 00xx section of the given
-// chord, at AIRFOIL_ANGLE_OF_ATTACK. The NACA thickness distribution has no
+// chord, at the given angle of attack. The NACA thickness distribution has no
 // closed-form distance function; the vertical gap to the surface is used
 // instead. Only the sign is load-bearing (it decides which cells are solid);
 // the magnitude is used for the outline in the display pass, where a slightly
 // wrong distance is invisible.
-fn airfoilSDF(d: vec2<f32>, chord: f32) -> f32 {
-  let c = cos(AIRFOIL_ANGLE_OF_ATTACK);
-  let s = sin(AIRFOIL_ANGLE_OF_ATTACK);
+fn airfoilSDF(d: vec2<f32>, chord: f32, alpha: f32) -> f32 {
   // Rotate into the airfoil's frame, then shift so x runs 0..1 from leading edge.
-  let local = vec2<f32>(d.x * c + d.y * s, -d.x * s + d.y * c);
+  let local = toChordFrame(d, alpha);
   let x = local.x / chord + 0.5;
   let y = local.y / chord;
 
@@ -109,17 +115,20 @@ fn obstacleSDF(p: vec2<f32>, uniforms: SimUniforms) -> f32 {
   let shape = i32(uniforms.obstacleShape + 0.5);
   let d = p - uniforms.obstacleCenter;
   let r = uniforms.obstacleRadius;
+  let alpha = uniforms.obstacleAngle;
 
   if (shape == 1) {
     return length(d) - r;
   }
   if (shape == 2) {
-    // A thin plate held across the flow — the bluffest body available, so it
-    // sheds at the lowest speed of the three.
-    return boxSDF(d, vec2<f32>(r * 0.12, r));
+    // A thin plate: half a chord long, 12 % of that thick. At zero angle of
+    // attack it lies along the flow and slips through it; at ±90° it stands
+    // broadside — the bluffest body available, shedding at the lowest speed of
+    // the three.
+    return boxSDF(toChordFrame(d, alpha), vec2<f32>(r, r * 0.12));
   }
   if (shape == 3) {
-    return airfoilSDF(d, r * 2.0);
+    return airfoilSDF(d, r * 2.0, alpha);
   }
   // "none": a distance no cell can be inside of.
   return 1.0e9;

@@ -7,8 +7,9 @@
  * fleet-wide CI "test" step has something to run.
  */
 
+import { TimeSpeed } from "scenerystack/scenery-phet";
 import { describe, expect, it } from "vitest";
-import { TimeModel } from "../src/common/TimeModel.js";
+import { TimeModel, timeSpeedMultiplier } from "../src/common/TimeModel.js";
 
 describe("TimeModel", () => {
   it("starts paused at time 0 by default", () => {
@@ -46,6 +47,46 @@ describe("TimeModel", () => {
     model.reset();
     expect(model.isPlayingProperty.value).toBe(false);
     expect(model.timeProperty.value).toBe(0);
+    model.dispose();
+  });
+
+  it("defaults to Normal speed, which advances time one-to-one", () => {
+    const model = new TimeModel(true);
+    expect(model.timeSpeedProperty.value).toBe(TimeSpeed.NORMAL);
+    model.step(1);
+    expect(model.timeProperty.value).toBe(1);
+    model.dispose();
+  });
+
+  it("scales elapsed time by the playback speed while playing", () => {
+    const model = new TimeModel(true);
+
+    model.timeSpeedProperty.value = TimeSpeed.SLOW;
+    model.step(1);
+    expect(model.timeProperty.value).toBeCloseTo(timeSpeedMultiplier(TimeSpeed.SLOW));
+
+    model.timeSpeedProperty.value = TimeSpeed.FAST;
+    model.step(1);
+    expect(model.timeProperty.value).toBeCloseTo(
+      timeSpeedMultiplier(TimeSpeed.SLOW) + timeSpeedMultiplier(TimeSpeed.FAST),
+    );
+
+    model.dispose();
+  });
+
+  it("does not advance while paused, at any speed", () => {
+    const model = new TimeModel();
+    model.timeSpeedProperty.value = TimeSpeed.FAST;
+    model.step(1);
+    expect(model.timeProperty.value).toBe(0);
+    model.dispose();
+  });
+
+  it("reset() restores Normal speed", () => {
+    const model = new TimeModel(true);
+    model.timeSpeedProperty.value = TimeSpeed.SLOW;
+    model.reset();
+    expect(model.timeSpeedProperty.value).toBe(TimeSpeed.NORMAL);
     model.dispose();
   });
 });

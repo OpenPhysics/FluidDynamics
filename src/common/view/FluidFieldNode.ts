@@ -31,6 +31,7 @@ import { Bounds2, Vector2 } from "scenerystack/dot";
 import { type EmptySelfOptions, optionize } from "scenerystack/phet-core";
 import { ModelViewTransform2 } from "scenerystack/phetcommon";
 import { CanvasNode, type CanvasNodeOptions, type Color, DragListener } from "scenerystack/scenery";
+import type { TimeSpeed } from "scenerystack/scenery-phet";
 import FluidDynamicsColors from "../../FluidDynamicsColors.js";
 import {
   CHANNEL_HEIGHT_M,
@@ -46,6 +47,7 @@ import { acquireFluidDevice, deviceLostEmitter, type GpuUnavailableReason } from
 import type { FluidModel } from "../model/FluidModel.js";
 import { obstacleShapeCode } from "../model/ObstacleShape.js";
 import { visualizationModeCode } from "../model/VisualizationMode.js";
+import { timeSpeedMultiplier } from "../TimeModel.js";
 
 export type FluidFieldNodeOptions = CanvasNodeOptions;
 
@@ -58,6 +60,7 @@ export class FluidFieldNode extends CanvasNode {
 
   private readonly model: FluidModel;
   private readonly isPlayingProperty: TReadOnlyProperty<boolean>;
+  private readonly timeSpeedProperty: TReadOnlyProperty<TimeSpeed>;
   private readonly reasonProperty: Property<GpuUnavailableReason | null>;
   private readonly gpuCanvas: HTMLCanvasElement;
   private readonly fieldBounds: Bounds2;
@@ -77,6 +80,7 @@ export class FluidFieldNode extends CanvasNode {
   public constructor(
     model: FluidModel,
     isPlayingProperty: TReadOnlyProperty<boolean>,
+    timeSpeedProperty: TReadOnlyProperty<TimeSpeed>,
     fieldBounds: Bounds2,
     providedOptions?: FluidFieldNodeOptions,
   ) {
@@ -98,6 +102,7 @@ export class FluidFieldNode extends CanvasNode {
 
     this.model = model;
     this.isPlayingProperty = isPlayingProperty;
+    this.timeSpeedProperty = timeSpeedProperty;
     this.fieldBounds = fieldBounds;
 
     // Model space is the channel in metres with the origin at its lower-left
@@ -144,20 +149,9 @@ export class FluidFieldNode extends CanvasNode {
     }
 
     if (this.isPlayingProperty.value) {
-      // A backgrounded tab reports a dt of many seconds. Substepping keeps each
-      // solver step within its stable displacement, and the cap keeps a long
-      // stall from turning into a hundred dispatches in one frame.
-      const substeps = Math.min(Math.ceil(dt / MAX_PHYSICS_DT), MAX_SUBSTEPS_PER_FRAME);
-      const substepDt = Math.min(dt / substeps, MAX_PHYSICS_DT);
-
-      for (let i = 0; i < substeps; i++) {
-        this.elapsedTime += substepDt;
-        engine.step(substepDt, this.stepValues());
-        // The pointer impulse is a per-frame event, not a sustained force: it
-        // must not be applied once per substep or a fast drag would inject
-        // several times the momentum the learner actually supplied.
-        this.pointerDelta = Vector2.ZERO;
-      }
+      // Playback speed scales dt before substepping, so slow motion runs the
+      // same stable solver with smaller steps and fast runs more of them.
+      this.advanceSolver(dt * timeSpeedMultiplier(this.timeSpeedProperty.value));
     } else {
       // Paused: still re-render, so switching visualization mode or dragging the
       // obstacle updates the picture instead of freezing on a stale frame.
@@ -177,14 +171,35 @@ export class FluidFieldNode extends CanvasNode {
    * the time control's step-forward button.
    */
   public stepOnce(dt: number): void {
+    // Substeps like update(), so a fast-speed step is not silently clamped back
+    // to a single MAX_PHYSICS_DT step.
+    this.advanceSolver(dt * timeSpeedMultiplier(this.timeSpeedProperty.value));
+    this.invalidatePaint();
+  }
+
+  /**
+   * Runs the solver over dt seconds of simulation time. A backgrounded tab
+   * reports a dt of many seconds; substepping keeps each solver step within its
+   * stable displacement, and the cap keeps a long stall from turning into a
+   * hundred dispatches in one frame.
+   */
+  private advanceSolver(dt: number): void {
     const engine = this.engine;
     if (engine === null || !engine.isRunning) {
       return;
     }
-    this.elapsedTime += dt;
-    engine.step(Math.min(dt, MAX_PHYSICS_DT), this.stepValues());
-    this.pointerDelta = Vector2.ZERO;
-    this.invalidatePaint();
+
+    const substeps = Math.min(Math.ceil(dt / MAX_PHYSICS_DT), MAX_SUBSTEPS_PER_FRAME);
+    const substepDt = Math.min(dt / substeps, MAX_PHYSICS_DT);
+
+    for (let i = 0; i < substeps; i++) {
+      this.elapsedTime += substepDt;
+      engine.step(substepDt, this.stepValues());
+      // The pointer impulse is a per-frame event, not a sustained force: it
+      // must not be applied once per substep or a fast drag would inject
+      // several times the momentum the learner actually supplied.
+      this.pointerDelta = Vector2.ZERO;
+    }
   }
 
   /**
@@ -282,6 +297,7 @@ export class FluidFieldNode extends CanvasNode {
       inflowSpeed: model.flowSpeedProperty.value,
       obstacleRadius: model.obstacleRadius,
       obstacleShape: obstacleShapeCode(model.obstacleShapeProperty.value),
+      obstacleAngle: model.obstacleAngle,
       visualization: visualizationModeCode(model.visualizationModeProperty.value),
       pointerActive: pointer !== null && !this.pointerDelta.equals(Vector2.ZERO),
       pointerRadius: POINTER_RADIUS_M,

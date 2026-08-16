@@ -14,8 +14,8 @@
     },
     "lab": {
       "screenSummary": {
-        "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un obstacle que vous pouvez déplacer, redimensionner et remodeler. Le champ peut afficher le colorant, la vitesse, la vorticité ou la pression.",
-        "controlArea": "La zone de contrôle comporte des curseurs pour la vitesse d'écoulement, la viscosité, la taille de l'obstacle, le détail des tourbillons et l'estompage du colorant, des sélecteurs pour la forme de l'obstacle, le champ affiché et la résolution de la grille, des boutons lecture et pause, et un bouton Tout réinitialiser.",
+        "playArea": "La zone de jeu est un canal où le fluide s'écoule de gauche à droite autour d'un obstacle que vous pouvez déplacer, redimensionner, remodeler et incliner. Le champ peut afficher le colorant, la vitesse, la vorticité ou la pression.",
+        "controlArea": "La zone de contrôle comporte des curseurs pour la vitesse d'écoulement, la viscosité, la taille de l'obstacle, l'angle d'attaque, le détail des tourbillons et l'estompage du colorant, des sélecteurs pour la forme de l'obstacle, le champ affiché et la résolution de la grille, des boutons lecture et pause, et un bouton Tout réinitialiser.",
         "interactionHint": "Augmentez la vitesse ou réduisez la viscosité pour élever le nombre de Reynolds. Passez à la vue de vorticité pour distinguer le plus clairement chaque tourbillon."
       }
     },
@@ -28,6 +28,8 @@
       "viscosity": "Viscosité",
       "viscosityHelpText": "Un fluide plus épais amortit le sillage et abaisse le nombre de Reynolds.",
       "obstacleSize": "Taille de l'obstacle",
+      "angleOfAttack": "Angle d'attaque",
+      "angleOfAttackHelpText": "Inclinez la plaque plane ou le profil par rapport à l'écoulement. Cela n'a aucun effet sur le cylindre.",
       "obstacleShape": "Forme de l'obstacle",
       "visualization": "Champ à afficher",
       "vorticity": "Détail des tourbillons",
@@ -41,6 +43,7 @@
     "flowSpeed": "Vitesse d'écoulement",
     "viscosity": "Viscosité",
     "obstacleSize": "Taille de l'obstacle",
+    "angleOfAttack": "Angle d'attaque",
     "obstacleShape": "Obstacle",
     "visualization": "Afficher",
     "vorticity": "Détail des tourbillons",
@@ -48,6 +51,7 @@
     "resolution": "Grille",
     "speedValuePattern": "{{value}} m/s",
     "sizeValuePattern": "{{value}} m",
+    "angleValuePattern": "{{value}}°",
     "viscosityValuePattern": "{{value}} m²/s",
     "reynoldsPattern": "Re ≈ {{value}}"
   },

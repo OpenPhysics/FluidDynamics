@@ -218,16 +218,137 @@ test.describe("WebGPU fluid engine", () => {
     }
 
     // Shape codes come from ObstacleShape.ts: 1 cylinder, 2 plate, 3 airfoil.
-    for (const obstacleShape of [1, 2, 3]) {
+    // The plate runs broadside — the pose this test was written for — and the
+    // airfoil at its default 8° tilt; the cylinder ignores the angle entirely.
+    const DEG = Math.PI / 180;
+    const cases = [
+      { shape: 1, angle: 0 },
+      { shape: 2, angle: 90 * DEG },
+      { shape: 3, angle: 8 * DEG },
+    ];
+    for (const { shape, angle } of cases) {
       await page.evaluate(() => window.harness.reset());
-      const frame = await render(page, format, 180, { inflowSpeed: 1, obstacleShape, visualization: 1 });
+      const frame = await render(page, format, 180, {
+        inflowSpeed: 1,
+        obstacleShape: shape,
+        obstacleAngle: angle,
+        visualization: 1,
+      });
 
       // In the speed view the body is dark (no-slip) and the flow accelerating
       // past its shoulders is bright.
       const body = frame.brightness(0.25, 0.5);
       const shoulder = frame.brightness(0.25, 0.62);
-      expect(shoulder, `shape ${obstacleShape} accelerates the flow past it`).toBeGreaterThan(body);
+      expect(shoulder, `shape ${shape} accelerates the flow past it`).toBeGreaterThan(body);
     }
+  });
+
+  test("tilting the flat plate changes how much it blocks the flow", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // The same plate, at the two ends of the angle slider's story: lying along
+    // the flow at 0° it is a streamlined sliver; broadside at 90° it is a baffle.
+    const renderPose = async (angle: number): Promise<Frame> => {
+      await page.evaluate(() => window.harness.reset());
+      return render(page, format, 180, {
+        inflowSpeed: 1,
+        obstacleShape: 2,
+        obstacleAngle: angle,
+        visualization: 1,
+      });
+    };
+    const aligned = await renderPose(0);
+    const broadside = await renderPose(Math.PI / 2);
+
+    // Geometry: half a plate-height above the centre is inside the solid when
+    // the plate stands broadside and open fluid when it lies along the flow.
+    expect(broadside.brightness(0.25, 0.545), "the broadside plate covers its shoulder line").toBeLessThan(
+      aligned.brightness(0.25, 0.545),
+    );
+
+    // Stagnation: just upstream of the broadside face the flow is piled up and
+    // slow (dark in the speed view); there it slips past the aligned sliver at
+    // close to the free-stream speed.
+    expect(broadside.brightness(0.225, 0.56), "the broadside face stalls the flow ahead of it").toBeLessThan(
+      aligned.brightness(0.225, 0.56),
+    );
+
+    // Venturi: what does get past the broadside plate squeezes through the gaps
+    // at its tips and accelerates above the free stream; above the aligned
+    // plate the flow is undisturbed.
+    expect(broadside.brightness(0.25, 0.62), "the broadside plate jets flow past its tips").toBeGreaterThan(
+      aligned.brightness(0.25, 0.62),
+    );
+  });
+
+  test("tilting the airfoil deflects the flow the way lift does", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // At a shedding Reynolds number the wake flaps, and one velocity snapshot
+    // says more about the phase of the flapping than about the deflection. So
+    // this runs in creeping flow (Re = U·D/ν = 1 · 0.15 / 0.05 = 3), where the
+    // wake is steady and the mean vertical velocity downstream of the wing is
+    // exactly the flow deflection: nose up (positive angle of attack) pushes
+    // fluid down behind the wing, nose down pushes it up, and the flat wing at
+    // 0° deflects nothing. The velocity field is read directly because the
+    // rendered frame encodes speed but not direction.
+    type VelocityField = { width: number; height: number; uv: number[] };
+
+    const runPose = async (angle: number): Promise<VelocityField> => {
+      await page.evaluate(() => window.harness.reset());
+      const status = await page.evaluate(
+        ([s, o]) => window.harness.run(s as number, 1 / 60, o as Record<string, unknown>),
+        [
+          420,
+          {
+            inflowSpeed: 1,
+            viscosity: 0.05,
+            obstacleShape: 3,
+            obstacleAngle: angle,
+          },
+        ] as const,
+      );
+      expect(status.running, "the device survived the run").toBe(true);
+      return page.evaluate(() => window.harness.velocity());
+    };
+
+    // Mean v in a box downstream of the wing (x 0.65–0.95 m, y 0.35–0.65 m).
+    const meanVerticalVelocity = (field: VelocityField): number => {
+      let sum = 0;
+      let count = 0;
+      for (let y = 0; y < field.height; y++) {
+        const yMetres = (y + 0.5) / field.height;
+        if (yMetres < 0.35 || yMetres > 0.65) {
+          continue;
+        }
+        for (let x = 0; x < field.width; x++) {
+          const xMetres = ((x + 0.5) / field.width) * 2;
+          if (xMetres < 0.65 || xMetres > 0.95) {
+            continue;
+          }
+          sum += field.uv[2 * (y * field.width + x) + 1] ?? 0;
+          count++;
+        }
+      }
+      return sum / count;
+    };
+
+    const DEG = Math.PI / 180;
+    const downwash = meanVerticalVelocity(await runPose(30 * DEG));
+    const flat = meanVerticalVelocity(await runPose(0));
+    const upwash = meanVerticalVelocity(await runPose(-30 * DEG));
+
+    expect(flat, "the untilted wing deflects nothing").toBeCloseTo(0, 3);
+    expect(downwash, "nose up pushes the flow down behind the wing").toBeLessThan(flat);
+    expect(upwash, "nose down pushes the flow up behind the wing").toBeGreaterThan(flat);
   });
 
   test("the largest obstacle the size slider allows leaves the solver finite", async ({ page }) => {
@@ -244,7 +365,14 @@ test.describe("WebGPU fluid engine", () => {
     // ask for, so the velocity field must stay finite and the device alive —
     // for every shape, since each spans the flow differently at that size.
     // The centre is the one the model's resize clamp would pick: pinned near
-    // mid-height, the only place the largest body fits.
+    // mid-height, the only place the largest body fits. Each shape runs at its
+    // most blocking pose — the plate broadside, the airfoil at its default tilt.
+    const DEG = Math.PI / 180;
+    const cases = [
+      { shape: 1, angle: 0 },
+      { shape: 2, angle: 90 * DEG },
+      { shape: 3, angle: 8 * DEG },
+    ];
     type VelocityField = { width: number; height: number; uv: number[] };
 
     const runSteps = async (steps: number, overrides: Record<string, unknown>): Promise<void> => {
@@ -255,11 +383,12 @@ test.describe("WebGPU fluid engine", () => {
       expect(status.running, "the device survived the run").toBe(true);
     };
 
-    for (const obstacleShape of [1, 2, 3]) {
+    for (const { shape, angle } of cases) {
       await page.evaluate(() => window.harness.reset());
       await runSteps(240, {
         inflowSpeed: 1,
-        obstacleShape,
+        obstacleShape: shape,
+        obstacleAngle: angle,
         obstacleRadius: 0.4,
         obstacleCenterX: 0.5,
         obstacleCenterY: 0.5,
@@ -278,10 +407,10 @@ test.describe("WebGPU fluid engine", () => {
         }
       }
 
-      expect(nonFinite, `shape ${obstacleShape} keeps the velocity field finite`).toBe(0);
+      expect(nonFinite, `shape ${shape} keeps the velocity field finite`).toBe(0);
       // Venturi peaks of several times the inflow are expected in the gaps;
       // tens of m/s would mean the projection has lost its grip.
-      expect(maxSpeed, `shape ${obstacleShape} shows no runaway acceleration`).toBeLessThan(20);
+      expect(maxSpeed, `shape ${shape} shows no runaway acceleration`).toBeLessThan(20);
     }
   });
 

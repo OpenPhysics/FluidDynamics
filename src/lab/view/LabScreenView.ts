@@ -4,8 +4,8 @@
  * The Lab screen: the same solver, with every parameter exposed.
  *
  * Differs from the Intro screen only in `showFullControls`, which adds the
- * viscosity, obstacle size, vortex-detail and dye-fade sliders, the obstacle
- * shape, visualization and grid pickers, and a draggable obstacle.
+ * viscosity, obstacle size, angle-of-attack, vortex-detail and dye-fade sliders,
+ * the obstacle shape, visualization and grid pickers, and a draggable obstacle.
  */
 
 import { combineOptions } from "scenerystack/phet-core";

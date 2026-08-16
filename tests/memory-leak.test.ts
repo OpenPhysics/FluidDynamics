@@ -54,6 +54,7 @@ function createAndDisposeFluidModel(): WeakRef<object> {
   model.kinematicViscosityProperty.value = 5e-3;
   model.obstacleDiameterProperty.value = 0.25;
   model.obstacleShapeProperty.value = "plate";
+  model.angleOfAttackProperty.value = 20;
   model.visualizationModeProperty.value = "vorticity";
   expect(model.flowRegimeProperty.value).toBeDefined();
 

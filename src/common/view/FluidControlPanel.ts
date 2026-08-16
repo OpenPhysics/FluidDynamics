@@ -25,6 +25,7 @@ import { PhetFont } from "scenerystack/scenery-phet";
 import { ComboBox, HSlider } from "scenerystack/sun";
 import FluidDynamicsColors from "../../FluidDynamicsColors.js";
 import {
+  ANGLE_OF_ATTACK_RANGE,
   CONTROL_LABEL_FONT_SIZE,
   CONTROL_PANEL_WIDTH,
   DYE_DISSIPATION_RANGE,
@@ -42,7 +43,7 @@ import { OBSTACLE_SHAPES, type ObstacleShape } from "../model/ObstacleShape.js";
 import { VISUALIZATION_MODES, type VisualizationMode } from "../model/VisualizationMode.js";
 
 type SelfOptions = {
-  /** Viscosity, obstacle shape and size, and the visualization picker. */
+  /** Viscosity, obstacle shape, size and angle of attack, and the visualization picker. */
   readonly showFullControls?: boolean;
 };
 
@@ -131,6 +132,15 @@ export class FluidControlPanel extends FluidDynamicsPanel {
           strings.controls.sizeValuePatternStringProperty,
           2,
           a11y.obstacleSizeStringProperty,
+        ),
+        slider(
+          model.angleOfAttackProperty,
+          ANGLE_OF_ATTACK_RANGE,
+          strings.controls.angleOfAttackStringProperty,
+          strings.controls.angleValuePatternStringProperty,
+          0,
+          a11y.angleOfAttackStringProperty,
+          a11y.angleOfAttackHelpTextStringProperty,
         ),
         slider(
           model.vorticityProperty,

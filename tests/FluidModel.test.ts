@@ -9,6 +9,8 @@ import { FluidModel } from "../src/common/model/FluidModel.js";
 import { OBSTACLE_SHAPES, obstacleShapeCode } from "../src/common/model/ObstacleShape.js";
 import { VISUALIZATION_MODES, visualizationModeCode } from "../src/common/model/VisualizationMode.js";
 import {
+  ANGLE_OF_ATTACK_DEFAULT,
+  ANGLE_OF_ATTACK_RANGE,
   FLOW_SPEED_DEFAULT,
   FLOW_SPEED_RANGE,
   OBSTACLE_DIAMETER_DEFAULT,
@@ -81,6 +83,18 @@ describe("FluidModel", () => {
     model.dispose();
   });
 
+  it("reports the angle of attack in radians", () => {
+    const model = new FluidModel();
+
+    expect(model.angleOfAttackProperty.value).toBe(ANGLE_OF_ATTACK_DEFAULT);
+    expect(model.obstacleAngle).toBeCloseTo((ANGLE_OF_ATTACK_DEFAULT * Math.PI) / 180, 12);
+
+    model.angleOfAttackProperty.value = ANGLE_OF_ATTACK_RANGE.max;
+    expect(model.obstacleAngle).toBeCloseTo(Math.PI / 2, 12);
+
+    model.dispose();
+  });
+
   it("pulls the obstacle away from the walls when it grows past where it fits", () => {
     const model = new FluidModel();
     // Parked at the bottom-left corner of the drag region, legal at the default
@@ -105,6 +119,7 @@ describe("FluidModel", () => {
     model.obstacleDiameterProperty.value = 0.3;
     model.obstacleCenterProperty.value = model.obstacleCenterProperty.value.plusXY(0.25, -0.1);
     model.obstacleShapeProperty.value = "airfoil";
+    model.angleOfAttackProperty.value = ANGLE_OF_ATTACK_RANGE.min;
     model.vorticityProperty.value = 5;
     model.dyeDissipationProperty.value = 0.2;
     model.visualizationModeProperty.value = "vorticity";
@@ -117,6 +132,7 @@ describe("FluidModel", () => {
     expect(model.kinematicViscosityProperty.value).toBe(VISCOSITY_DEFAULT);
     expect(model.obstacleDiameterProperty.value).toBe(OBSTACLE_DIAMETER_DEFAULT);
     expect(model.obstacleShapeProperty.value).toBe("cylinder");
+    expect(model.angleOfAttackProperty.value).toBe(ANGLE_OF_ATTACK_DEFAULT);
     expect(model.visualizationModeProperty.value).toBe("dye");
     expect(model.gridResolutionProperty.value).toBe("standard");
     expect(model.reynoldsNumberProperty.value).toBeCloseTo(initialRe, 12);
