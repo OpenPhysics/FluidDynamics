@@ -196,10 +196,14 @@ export class ToolboxPanel extends FluidDynamicsPanel {
 
   /** Drag end over the toolbox puts the ruler away. */
   private considerRulerReturn(): void {
+    const parent = this.parent;
+    if (!parent) {
+      return;
+    }
     // Intersection rather than containment: the ruler is wider than the
     // toolbox, and its drag bounds keep its centre from ever reaching the
     // panel, so "dropped on the toolbox" has to mean "overlapping it".
-    const rulerViewBounds = this.parent.globalToLocalBounds(this.rulerNode.globalBounds);
+    const rulerViewBounds = parent.globalToLocalBounds(this.rulerNode.globalBounds);
     if (this.returnBounds.intersectsBounds(rulerViewBounds)) {
       this.model.rulerVisibleProperty.value = false;
     }
@@ -211,7 +215,8 @@ export class ToolboxPanel extends FluidDynamicsPanel {
    * under the ScreenView, whose scale maps that frame onto the page.
    */
   private get returnBounds(): Bounds2 {
-    return this.parent.globalToLocalBounds(this.globalBounds).dilated(TOOLBOX_RETURN_TOLERANCE_PX);
+    const parent = this.parent;
+    return (parent ? parent.globalToLocalBounds(this.globalBounds) : this.bounds).dilated(TOOLBOX_RETURN_TOLERANCE_PX);
   }
 
   public override dispose(): void {
