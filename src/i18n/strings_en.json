@@ -38,10 +38,15 @@
       "obstacleHandleHelpText": "Drag to move the obstacle within the channel.",
       "sizeAngleHandle": "Obstacle size and angle",
       "sizeAngleHandleHelpText": "Drag the knob toward or away from the obstacle to resize it; drag it around the obstacle to tilt it. Up and down arrows resize, left and right arrows tilt.",
-      "focusHandle": "Ellipse focus",
+      "upstreamFocusHandle": "Upstream ellipse focus",
+      "downstreamFocusHandle": "Downstream ellipse focus",
       "focusHandleHelpText": "Drag a focus outward to stretch the ellipse, or toward the centre to round it back into a disk. Up and down arrows stretch, left and right arrows rotate.",
       "thicknessHandle": "Airfoil thickness",
       "thicknessHandleHelpText": "Drag the knob up or down to make the airfoil thicker or slimmer; the arrow keys do the same.",
+      "sizeResponsePattern": "{{value}} metres across",
+      "angleResponsePattern": "Angle of attack {{value}} degrees",
+      "focalResponsePattern": "Foci {{value}} metres from the centre",
+      "thicknessResponsePattern": "Thickness {{value}} percent of chord",
       "toolboxTapeName": "Measuring tape",
       "toolboxTapeHelpText": "Press to take the measuring tape out of the toolbox or to put it back. Drag it out to place it directly.",
       "toolboxRulerName": "Ruler",
@@ -49,6 +54,18 @@
       "rulerName": "Ruler",
       "rulerHelpText": "Drag to move the ruler, or use the arrow keys. Numbers mark every 10 centimetres."
     }
+  },
+  "keyboardHelp": {
+    "obstacleHeading": "Shape the Obstacle",
+    "resize": "Resize the obstacle",
+    "tilt": "Tilt the obstacle",
+    "stretchEllipse": "Stretch or round the ellipse",
+    "rotateEllipse": "Rotate the ellipse",
+    "airfoilThickness": "Change the airfoil thickness",
+    "smallerSteps": "Adjust in smaller steps",
+    "moveHeading": "Move the Obstacle and Tools",
+    "toolboxHeading": "Toolbox",
+    "toolTakeOut": "Take a tool out or put it back"
   },
   "controls": {
     "flowSpeed": "Flow Speed",

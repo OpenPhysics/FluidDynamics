@@ -15,17 +15,24 @@
  * as fast.
  */
 
-import type { TReadOnlyProperty } from "scenerystack/axon";
+import { Multilink, type TReadOnlyProperty } from "scenerystack/axon";
 import { optionize } from "scenerystack/phet-core";
 import { Node } from "scenerystack/scenery";
 import { ResetAllButton, TimeControlNode } from "scenerystack/scenery-phet";
 import { ScreenView, type ScreenViewOptions } from "scenerystack/sim";
-import { CONTROL_PANEL_WIDTH, FIELD_VIEW_BOUNDS, SCREEN_VIEW_MARGIN } from "../../FluidDynamicsConstants.js";
 import {
+  CONTROL_PANEL_WIDTH,
+  FIELD_VIEW_BOUNDS,
+  SCREEN_VIEW_MARGIN,
+  STEP_FORWARD_DT,
+} from "../../FluidDynamicsConstants.js";
+import {
+  FLAT_BUTTON_APPEARANCE_OPTIONS,
   FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS,
   FLAT_RESET_ALL_BUTTON_OPTIONS,
   TIME_CONTROL_SPEED_RADIO_OPTIONS,
 } from "../FluidDynamicsButtonOptions.js";
+import type { GpuUnavailableReason } from "../gpu/webgpuSupport.js";
 import type { FluidModel } from "../model/FluidModel.js";
 import type { ObstacleShape } from "../model/ObstacleShape.js";
 import { TIME_SPEEDS, type TimeModel } from "../TimeModel.js";
@@ -124,14 +131,34 @@ export class FluidScreenView extends ScreenView {
     // already invisible when it is added never populates its pdomDisplays, and
     // its parallel-DOM content stays hidden for good (the tools below rely on
     // the same ordering).
-    const shapeListener = (shape: ObstacleShape): void => {
-      sizeAngleHandle.visible = shape !== "none";
-      fociHandle.visible = shape === "ellipse";
-      thicknessHandle.visible = shape === "airfoil";
+    //
+    // Also gated on the field being renderable at all. Without a device there is
+    // no body on screen to grab, so a visible handle is a control over nothing —
+    // and worse for a keyboard user, who would tab through four of them and hear
+    // four names for an obstacle that is not there.
+    const gpuReasonProperty = this.fluidFieldNode.gpuUnavailableReasonProperty;
+    const shapeListener = (shape: ObstacleShape, reason: GpuUnavailableReason | null): void => {
+      const hasField = reason === null;
+      const wanted: readonly [Node, boolean][] = [
+        [obstacleHandle, hasField],
+        [sizeAngleHandle, hasField && shape !== "none"],
+        [fociHandle, hasField && shape === "ellipse"],
+        [thicknessHandle, hasField && shape === "airfoil"],
+      ];
+      for (const [handle, visible] of wanted) {
+        // Hiding also interrupts, as it does for the tools below: the device can
+        // be lost, or the shape changed by a combo box, with a finger still down
+        // on a knob — and a drag that outlives its node goes on writing values
+        // no one can see until the finger lifts.
+        if (!visible) {
+          handle.interruptSubtreeInput();
+        }
+        handle.visible = visible;
+      }
     };
-    model.obstacleShapeProperty.link(shapeListener);
+    const shapeMultilink = Multilink.multilink([model.obstacleShapeProperty, gpuReasonProperty], shapeListener);
 
-    this.addChild(new WebGPUUnavailableNode(this.fluidFieldNode.gpuUnavailableReasonProperty, FIELD_VIEW_BOUNDS));
+    this.addChild(new WebGPUUnavailableNode(gpuReasonProperty, FIELD_VIEW_BOUNDS));
 
     // ── Reynolds number and regime ────────────────────────────────────────────
     const readout = new FlowReadoutNode(model, {
@@ -167,10 +194,19 @@ export class FluidScreenView extends ScreenView {
       ...TIME_CONTROL_SPEED_RADIO_OPTIONS,
       playPauseStepButtonOptions: {
         ...FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS,
+        // The flat appearance has to be re-spread here: naming
+        // stepForwardButtonOptions replaces the whole object the spread above
+        // supplied, so a bare { listener } would leave this one button beveled
+        // among its flat neighbours.
         stepForwardButtonOptions: {
+          ...FLAT_BUTTON_APPEARANCE_OPTIONS,
           listener: () => {
-            timer.step(1 / 60);
-            this.fluidFieldNode.stepOnce(1 / 60);
+            // The clock is advanced explicitly rather than through
+            // timer.step(), which ignores dt while paused — and paused is the
+            // only state this button is reachable in. Without this the sim
+            // clock and the solver would drift apart by one frame per press.
+            timer.stepOnce(STEP_FORWARD_DT);
+            this.fluidFieldNode.stepOnce(STEP_FORWARD_DT);
           },
         },
       },
@@ -256,7 +292,7 @@ export class FluidScreenView extends ScreenView {
     );
 
     this.disposers.push(() => {
-      model.obstacleShapeProperty.unlink(shapeListener);
+      shapeMultilink.dispose();
       model.rulerVisibleProperty.unlink(rulerVisibleListener);
       model.measuringTapeVisibleProperty.unlink(tapeVisibleListener);
       toolboxPanel.dispose();
@@ -268,6 +304,11 @@ export class FluidScreenView extends ScreenView {
       sizeAngleHandle.dispose();
       obstacleHandle.dispose();
       this.fluidFieldNode.dispose();
+      // Created by the subclass and handed down, but owned here: it is a
+      // DerivedProperty over the model *and* the global localized strings, so
+      // leaving it alive keeps the model reachable from a page-lifetime
+      // singleton. The subclasses have no dispose() of their own to do it in.
+      fluidDescriptionProperty.dispose();
     });
   }
 

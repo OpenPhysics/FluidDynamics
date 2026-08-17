@@ -48,6 +48,25 @@ import { maxFocalRadius } from "./ObstacleGeometry.js";
 import type { ObstacleShape } from "./ObstacleShape.js";
 import type { VisualizationMode } from "./VisualizationMode.js";
 
+/**
+ * Links `listener` to `source` and returns the closure that unlinks it, first
+ * running whatever detach closure was already in that slot.
+ *
+ * The attach* methods below are each called once per model today, but nothing
+ * enforces that — and without this, a second call would overwrite the stored
+ * detach closure and strand the first listener on a preference Property that
+ * outlives the model, which is exactly the leak dispose() exists to prevent.
+ */
+function attach<T>(
+  previousDetach: (() => void) | null,
+  source: TReadOnlyProperty<T>,
+  listener: (value: T) => void,
+): () => void {
+  previousDetach?.();
+  source.link(listener);
+  return () => source.unlink(listener);
+}
+
 type FluidModelOptions = {
   /**
    * Shape the screen starts with. The Intro screen keeps the cylinder it has
@@ -268,11 +287,9 @@ export class FluidModel {
       this.pressureIterationsProperty.value = fluidDynamicsQueryParameters.pressureIterations;
       return;
     }
-    const listener = (highQuality: boolean): void => {
+    this.detachSolverQuality = attach(this.detachSolverQuality, highQualityProperty, (highQuality) => {
       this.pressureIterationsProperty.value = highQuality ? PRESSURE_ITERATIONS_HIGH : PRESSURE_ITERATIONS_DEFAULT;
-    };
-    highQualityProperty.link(listener);
-    this.detachSolverQuality = () => highQualityProperty.unlink(listener);
+    });
   }
 
   /**
@@ -281,11 +298,9 @@ export class FluidModel {
    * re-syncing the mirror would otherwise desync from it.
    */
   public attachVorticity(vorticityProperty: TReadOnlyProperty<number>): void {
-    const listener = (vorticity: number): void => {
+    this.detachVorticity = attach(this.detachVorticity, vorticityProperty, (vorticity) => {
       this.vorticityProperty.value = vorticity;
-    };
-    vorticityProperty.link(listener);
-    this.detachVorticity = () => vorticityProperty.unlink(listener);
+    });
   }
 
   /**
@@ -293,11 +308,9 @@ export class FluidModel {
    * dyeDissipationProperty, for the same reason as attachVorticity.
    */
   public attachDyeDissipation(dyeDissipationProperty: TReadOnlyProperty<number>): void {
-    const listener = (dissipation: number): void => {
+    this.detachDyeDissipation = attach(this.detachDyeDissipation, dyeDissipationProperty, (dissipation) => {
       this.dyeDissipationProperty.value = dissipation;
-    };
-    dyeDissipationProperty.link(listener);
-    this.detachDyeDissipation = () => dyeDissipationProperty.unlink(listener);
+    });
   }
 
   /**
@@ -305,11 +318,9 @@ export class FluidModel {
    * reset gridResolutionProperty, for the same reason as attachVorticity.
    */
   public attachGridResolution(gridResolutionProperty: TReadOnlyProperty<GridResolution>): void {
-    const listener = (resolution: GridResolution): void => {
+    this.detachGridResolution = attach(this.detachGridResolution, gridResolutionProperty, (resolution) => {
       this.gridResolutionProperty.value = resolution;
-    };
-    gridResolutionProperty.link(listener);
-    this.detachGridResolution = () => gridResolutionProperty.unlink(listener);
+    });
   }
 
   /** Obstacle half-size in metres, as written into the shader uniform. */

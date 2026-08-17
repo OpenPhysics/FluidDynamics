@@ -1,8 +1,8 @@
 {
-  "title": "Fluid Dynamics",
+  "title": "Dinámica de fluidos",
   "screens": {
-    "intro": "Intro",
-    "lab": "Lab"
+    "intro": "Introducción",
+    "lab": "Laboratorio"
   },
   "a11y": {
     "intro": {
@@ -38,10 +38,15 @@
       "obstacleHandleHelpText": "Arrastra para mover el obstáculo dentro del canal.",
       "sizeAngleHandle": "Tamaño y ángulo del obstáculo",
       "sizeAngleHandleHelpText": "Arrastra el tirador hacia o lejos del obstáculo para redimensionarlo; arrástralo alrededor del obstáculo para inclinarlo. Las flechas arriba y abajo redimensionan; izquierda y derecha inclinan.",
-      "focusHandle": "Foco de la elipse",
+      "upstreamFocusHandle": "Foco aguas arriba de la elipse",
+      "downstreamFocusHandle": "Foco aguas abajo de la elipse",
       "focusHandleHelpText": "Arrastra un foco hacia afuera para estirar la elipse, o hacia el centro para volver a un disco. Las flechas arriba y abajo estiran; izquierda y derecha rotan.",
       "thicknessHandle": "Grosor del perfil",
       "thicknessHandleHelpText": "Arrastra el tirador hacia arriba o hacia abajo para engrosar o afinar el perfil; las flechas hacen lo mismo.",
+      "sizeResponsePattern": "{{value}} metros de diámetro",
+      "angleResponsePattern": "Ángulo de ataque {{value}} grados",
+      "focalResponsePattern": "Focos a {{value}} metros del centro",
+      "thicknessResponsePattern": "Grosor {{value}} por ciento de la cuerda",
       "toolboxTapeName": "Cinta métrica",
       "toolboxTapeHelpText": "Pulsa para sacar la cinta métrica de la caja de herramientas o para guardarla. Arrástrala directamente para colocarla.",
       "toolboxRulerName": "Regla",
@@ -49,6 +54,18 @@
       "rulerName": "Regla",
       "rulerHelpText": "Arrastra la regla para moverla, o usa las flechas. Los números marcan cada 10 centímetros."
     }
+  },
+  "keyboardHelp": {
+    "obstacleHeading": "Dar forma al obstáculo",
+    "resize": "Redimensionar el obstáculo",
+    "tilt": "Inclinar el obstáculo",
+    "stretchEllipse": "Estirar o redondear la elipse",
+    "rotateEllipse": "Rotar la elipse",
+    "airfoilThickness": "Cambiar el grosor del perfil",
+    "smallerSteps": "Ajustar en pasos más pequeños",
+    "moveHeading": "Mover el obstáculo y las herramientas",
+    "toolboxHeading": "Caja de herramientas",
+    "toolTakeOut": "Sacar una herramienta o guardarla"
   },
   "controls": {
     "flowSpeed": "Velocidad del flujo",

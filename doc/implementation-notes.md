@@ -251,10 +251,51 @@ regime. The same Property is used as the fluid field's `accessibleParagraph` and
 as both screens' `currentDetailsContent`, so the field and the summary can never
 disagree.
 
+That Property is created by each screen view and owned by `FluidScreenView`,
+which disposes it. It matters more than the usual view Property: it derives from
+the *global* localized string Properties as well as the model's, so an
+undisposed one stays reachable from a page-lifetime singleton and keeps the
+whole model alive behind it.
+
 Every control carries an `accessibleName` from the shared `a11y.fluid` string
 group. The obstacle handle is a transparent — not invisible — `Circle`: an
 invisible Node is removed from the parallel DOM and can be neither focused nor
 hit-tested.
+
+**The live paragraph is on the field, so it says nothing while focus is on a
+handle.** The shaping knobs are the sim's primary direct-manipulation controls
+and the body they shape is painted by the display shader, so a keyboard user
+gets no feedback at all unless each knob reports its own change. Every arrow
+press therefore ends in `addAccessibleResponse()` with the value it produced —
+diameter, angle of attack, focal separation, or thickness as a percentage of
+chord.
+
+**The handles' keys are `HotkeyData`, not a `keydown` branch.** Every binding is
+declared once in `common/view/ObstacleHandleKeyboard.ts` and read twice: by
+`createArrowKeyListener()` to build the `KeyboardListener`, and by
+`FluidKeyboardHelpContent.ts` via `KeyboardHelpSectionRow.fromHotkeyData` to
+build the dialog rows, icons included. A binding therefore cannot exist without
+being documented, or drift from what the dialog claims, and the keys land in
+SceneryStack's hotkey registry where they are checked against the global
+shortcuts. Shift is spelled out as its own key string (`shift+arrowUp`, …)
+because a listener registered for `arrowUp` alone does not fire while a modifier
+is down.
+
+The keyboard-help dialog itself is one shared class with two flags, mirroring
+`FluidControlPanel`: the Intro screen's cylinder has no chord to tilt, no foci
+and no thickness, and its panel has no combo box, so both optional groups are
+off there.
+
+**When WebGPU is unavailable the handles are hidden**, not merely inert. There
+is no body on screen to grab, and leaving them visible would give a keyboard
+user four focusable controls naming an obstacle that is not there.
+
+**Touch targets are dilated, mouse targets are not.** The knobs' 14 px hit
+circles are bounded by how close two knobs get — the ellipse's foci coincide at
+zero eccentricity — so enlarging them for the mouse would start stealing presses
+from a neighbour. `touchArea` is dilated past that instead, on the knobs, the
+slider thumbs and the toolbox icons, since a finger cannot aim at a 12 px dot in
+the first place.
 
 `WebGPUUnavailableNode` sets `tagName: "div"` for a load-bearing reason: Scenery
 only creates a paragraph sibling when the paragraph content is non-empty, and the
@@ -369,7 +410,19 @@ idempotence.
 
 `FluidScreenView.dispose()` does **not** call `super.dispose()`: joist's
 `ScreenView` is intentionally non-disposable and its `setPDOMOrder` override
-throws during ParallelDOM teardown. It drains a `disposers` array instead.
+throws during ParallelDOM teardown. It drains a `disposers` array instead — and
+that array is where the fluid-description Property is released, even though the
+subclasses construct it (they have no `dispose()` of their own).
+
+`FluidDynamicsPreferencesNode` goes the other way and declares
+`isDisposable: false`. `PreferencesModel` calls `createContent()` once and the
+dialog lives as long as the sim, so nothing it builds is ever torn down; saying
+so makes a stray `dispose()` assert instead of silently leaving the preference
+sliders' `DerivedProperty`s listening.
+
+`FluidModel`'s `attach*()` methods run any previous detach closure before
+linking, so calling one twice cannot strand a listener on a preference Property
+that outlives the model.
 
 ## Testing
 
@@ -384,8 +437,20 @@ throws during ParallelDOM teardown. It drains a `disposers` array instead.
 | `tests/FluidModel.test.ts` | derived Re, reset, reachable regimes, shader codes |
 | `tests/ObstacleGeometry.test.ts` | handle math: angle wrap, focal cap, NACA mirror |
 | `tests/memory-leak.test.ts` | WeakRef dispose regression for both models |
+| `tests/FluidDynamicsConstants.test.ts` | the namespace registration lists every exported constant |
 | `tests/fuzz/engine.spec.ts` | **the solver itself**, in a real browser |
-| `tests/fuzz/fuzz.spec.ts` | joist `?fuzz` smoke |
+| `tests/fuzz/toolbox.spec.ts` | take-out drag, drop-to-return, click-to-park |
+| `tests/fuzz/fuzz.spec.ts` | joist `?fuzz` and `?fuzzBoard` smoke, both with `&ea` |
+
+`fuzz.spec.ts` runs the keyboard fuzz as well as the pointer fuzz, and that is
+not redundant: `?fuzzBoard` is what exercises the parallel DOM, where a CSP
+blocking Scenery's inline `onclick` handlers surfaces as a console error on
+every button activation. The pointer fuzz never touches those elements, so it
+passed the whole time that was broken.
+
+`FluidDynamicsConstants.test.ts` parses the source rather than importing it: the
+registered object is not reachable from the module's exports, so comparing it
+against the file's `export const`s means reading both out of the text.
 
 `tests/fuzz/engine.spec.ts` is the interesting one. The fluid state is
 unreachable from Vitest, so it drives the real engine through

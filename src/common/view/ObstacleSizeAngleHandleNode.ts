@@ -20,8 +20,9 @@
  */
 
 import { Multilink, type NumberProperty } from "scenerystack/axon";
-import { Vector2, type Vector2Property } from "scenerystack/dot";
+import { toFixed, Vector2, type Vector2Property } from "scenerystack/dot";
 import type { ModelViewTransform2 } from "scenerystack/phetcommon";
+import { StringUtils } from "scenerystack/phetcommon";
 import { DragListener, Node } from "scenerystack/scenery";
 import {
   ANGLE_KEYBOARD_STEP_DEG,
@@ -84,32 +85,56 @@ export class ObstacleSizeAngleHandleNode extends Node {
     });
     knob.addInputListener(dragListener);
 
+    // A knob change is invisible to a screen reader: the body it resizes is
+    // painted by the display shader, and the field's live paragraph is on the
+    // field node, not here, so nothing is announced while focus is on the knob.
+    // Each arrow press therefore reports the value it just produced.
+    const announceSize = (): void => {
+      knob.addAccessibleResponse(
+        StringUtils.fillIn(a11y.sizeResponsePatternStringProperty.value, {
+          value: toFixed(diameterProperty.value, 2),
+        }),
+      );
+    };
+    const announceAngle = (): void => {
+      knob.addAccessibleResponse(
+        StringUtils.fillIn(a11y.angleResponsePatternStringProperty.value, {
+          value: toFixed(angleOfAttackProperty.value, 0),
+        }),
+      );
+    };
+
     const keyListener = createArrowKeyListener({
       up: (fine) => {
         diameterProperty.value = OBSTACLE_DIAMETER_RANGE.constrainValue(
           diameterProperty.value + keyboardStep(SIZE_KEYBOARD_STEP_M, fine),
         );
+        announceSize();
       },
       down: (fine) => {
         diameterProperty.value = OBSTACLE_DIAMETER_RANGE.constrainValue(
           diameterProperty.value - keyboardStep(SIZE_KEYBOARD_STEP_M, fine),
         );
+        announceSize();
       },
       left: (fine) => {
         angleOfAttackProperty.value = wrapAngleOfAttackDeg(
           angleOfAttackProperty.value + keyboardStep(ANGLE_KEYBOARD_STEP_DEG, fine),
         );
+        announceAngle();
       },
       right: (fine) => {
         angleOfAttackProperty.value = wrapAngleOfAttackDeg(
           angleOfAttackProperty.value - keyboardStep(ANGLE_KEYBOARD_STEP_DEG, fine),
         );
+        announceAngle();
       },
     });
     knob.addInputListener(keyListener);
 
     this.disposeObstacleSizeAngleHandleNode = () => {
       knob.removeInputListener(keyListener);
+      keyListener.dispose();
       knob.removeInputListener(dragListener);
       dragListener.dispose();
       positionListener.dispose();

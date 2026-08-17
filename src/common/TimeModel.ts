@@ -81,11 +81,28 @@ export class TimeModel {
   /**
    * Advance the simulation clock by dt seconds of wall-clock time, scaled by the
    * current playback speed. Call this from your model's step() method.
+   *
+   * Does nothing while paused, which is what makes {@link stepOnce} a separate
+   * entry point rather than the same call.
    */
   public step(dt: number): void {
     if (this.isPlayingProperty.value) {
-      this.timeProperty.value += dt * timeSpeedMultiplier(this.timeSpeedProperty.value);
+      this.stepOnce(dt);
     }
+  }
+
+  /**
+   * Advance the clock by dt seconds regardless of the play state, for the time
+   * control's step-forward button.
+   *
+   * That button is only reachable while paused, so routing it through step()
+   * would advance nothing — the clock would fall a frame behind whatever the
+   * view stepped alongside it, once per press, silently. Scaled by the playback
+   * speed for the same reason step() is: a step-forward at slow speed should
+   * move the clock by as much as it moves the simulation.
+   */
+  public stepOnce(dt: number): void {
+    this.timeProperty.value += dt * timeSpeedMultiplier(this.timeSpeedProperty.value);
   }
 
   /** Resets clock and playback state to their initial values. */

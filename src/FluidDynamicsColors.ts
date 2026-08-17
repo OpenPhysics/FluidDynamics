@@ -112,6 +112,30 @@ const FluidDynamicsColors = {
     default: "#1a1a1a",
     projector: "#1a1a1a",
   }),
+
+  // ── Objects drawn over the field ─────────────────────────────────────────────
+  // These sit on the dye field rather than on a panel, and the field's own colors
+  // come from the display shader and do not follow the color profile. So these
+  // are profile-invariant too — but they live here, not inline in a view, so
+  // there is still one place to change them.
+
+  /** Rim around a handle knob's dot, dark enough to read on both the body and bright dye. */
+  handleKnobStrokeColorProperty: new ProfileColorProperty(FluidDynamicsNamespace, "handleKnobStroke", {
+    default: "rgba(10, 11, 16, 0.85)",
+    projector: "rgba(10, 11, 16, 0.85)",
+  }),
+
+  /** Body of the toolbox's ruler icon, matching the ruler the icon takes out. */
+  rulerIconFillColorProperty: new ProfileColorProperty(FluidDynamicsNamespace, "rulerIconFill", {
+    default: "#ece171",
+    projector: "#ece171",
+  }),
+
+  /** Outline and tick marks on the toolbox's ruler icon. */
+  rulerIconStrokeColorProperty: new ProfileColorProperty(FluidDynamicsNamespace, "rulerIconStroke", {
+    default: "#000000",
+    projector: "#000000",
+  }),
 };
 
 export default FluidDynamicsColors;

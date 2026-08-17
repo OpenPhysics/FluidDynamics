@@ -31,6 +31,8 @@ Read both before changing the solver or the Scenery ↔ WebGPU bridge.
 | `src/common/view/FluidFieldNode.ts` | The Scenery ↔ WebGPU bridge |
 | `src/common/view/FluidScreenView.ts` | Layout and wiring shared by both screens |
 | `src/common/view/fluidDescription.ts` | Live a11y description, shared by field and screen summaries |
+| `src/common/view/ObstacleHandleKeyboard.ts` | The handles' `HotkeyData` — read by both the listeners and the help dialog |
+| `src/common/view/FluidKeyboardHelpContent.ts` | Keyboard-help dialog shared by both screens |
 | `src/intro/`, `src/lab/` | Thin screen wrappers; they differ only in `showFullControls` |
 
 ## Things that will bite you
@@ -94,6 +96,13 @@ tool appears at the pointer, correctly positioned, and then never moves. Nothing
 throws and nothing logs — `tests/fuzz/toolbox.spec.ts` exists because a test
 that only checked whether the tool became visible passed the whole time.
 
+**Spreading a `FLAT_*` bundle does not survive naming one of its keys.** The
+bundles in `FluidDynamicsButtonOptions.ts` are nested objects, so
+`{ ...FLAT_PLAY_PAUSE_STEP_BUTTON_OPTIONS, stepForwardButtonOptions: { listener } }`
+replaces the flat appearance wholesale and leaves that one button beveled among
+its neighbours. Re-spread `FLAT_BUTTON_APPEARANCE_OPTIONS` inside any nested
+object you name.
+
 **Vorticity confinement is scaled by how much of the damping is numerical.**
 Removing that scaling makes low-Reynolds-number wakes shed vortices they should
 not. See `shaders/vorticity.wgsl` and `doc/model.md`.
@@ -105,8 +114,14 @@ Use `FluidDynamicsPanel` for every panel, and the `FLAT_*` option bundles from
 beveled and this sim is flat. Pair combo-box item labels with
 `LIGHT_SURFACE_TEXT_FILL`, not `textColorProperty`.
 
+Every colour goes through `FluidDynamicsColors.ts`, including the ones that are
+the same in both profiles (the knob rim, the ruler icon). Profile-invariant is a
+decision recorded there, not a reason to inline a hex.
+
 `TimeModel` is composed into each screen model (never subclassed) and bound to
-`TimeControlNode` via `isPlayingProperty`.
+`TimeControlNode` via `isPlayingProperty`. Its `step()` ignores `dt` while
+paused, so the step-forward button calls `stepOnce()` instead — routing that
+button through `step()` advances the solver and not the clock.
 
 ## Accessibility
 
@@ -114,7 +129,20 @@ A screen-reader user cannot see the dye, so `createFluidDescriptionProperty()`
 builds a live sentence naming the body, speed, Reynolds number and regime, and
 the *same Property* is used as the field's `accessibleParagraph` and as both
 screens' `currentDetailsContent`. Keep it that way — they must not be allowed to
-disagree.
+disagree. `FluidScreenView` owns that Property and disposes it: it listens to
+the global localized strings, so an undisposed one keeps the model alive behind
+it.
+
+That paragraph lives on the *field*, so it is not announced while focus is on a
+handle. Each shaping knob therefore calls `addAccessibleResponse()` with the
+value its arrow press just produced — without that, dragging the obstacle's size
+or angle from the keyboard is completely silent.
+
+**Handle keys are `HotkeyData`, declared once in `ObstacleHandleKeyboard.ts`.**
+The listeners are built from them and so are the keyboard-help rows
+(`KeyboardHelpSectionRow.fromHotkeyData` in `FluidKeyboardHelpContent.ts`), so a
+binding cannot exist without being documented, or drift from what the dialog
+claims. Add a key there, not in a bare `keydown` handler.
 
 Every control takes its `accessibleName` from the shared `a11y.fluid` string
 group, never a literal. New strings must be added to **all three** locale files;
@@ -144,6 +172,7 @@ Fleet-standard Vitest layout under root `tests/`, plus a Playwright suite:
 | `tests/FlowRegime.test.ts` | Reynolds thresholds and boundaries |
 | `tests/FluidModel.test.ts` | Derived Re, reset, reachable regimes, shader codes |
 | `tests/memory-leak.test.ts` | WeakRef dispose regression (both models) |
+| `tests/FluidDynamicsConstants.test.ts` | Every exported constant is in the namespace registration |
 | `tests/harness/engine.html` | Page that loads the real engine for the test below |
 | `tests/fuzz/engine.spec.ts` | **The solver**, in a real browser, verified by pixel readback |
 | `tests/fuzz/toolbox.spec.ts` | Take-out drag, drop-to-return, click-to-park — needs no WebGPU |

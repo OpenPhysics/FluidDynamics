@@ -7,14 +7,24 @@
  */
 
 import { DerivedProperty, type NumberProperty, type TReadOnlyProperty } from "scenerystack/axon";
-import { Dimension2, type Range } from "scenerystack/dot";
+import { Dimension2, type Range, toFixed } from "scenerystack/dot";
 import { HBox, Text, VBox } from "scenerystack/scenery";
 import { PhetFont } from "scenerystack/scenery-phet";
 import { Checkbox, HSlider, VerticalAquaRadioButtonGroup } from "scenerystack/sun";
 import type { Tandem } from "scenerystack/tandem";
 import { GRID_RESOLUTIONS, type GridResolution } from "../common/gpu/FluidGridSpec.js";
 import FluidDynamicsColors from "../FluidDynamicsColors.js";
-import { DYE_DISSIPATION_RANGE, VORTICITY_RANGE } from "../FluidDynamicsConstants.js";
+import {
+  CONTROL_LABEL_FONT_SIZE,
+  DYE_DISSIPATION_RANGE,
+  PREFERENCE_SLIDER_TRACK_LENGTH_PX,
+  PREFERENCES_HEADING_FONT_SIZE,
+  SLIDER_THUMB_SIZE,
+  SLIDER_THUMB_TOUCH_DILATION_X_PX,
+  SLIDER_THUMB_TOUCH_DILATION_Y_PX,
+  SLIDER_TRACK_HEIGHT_PX,
+  VORTICITY_RANGE,
+} from "../FluidDynamicsConstants.js";
 import FluidDynamicsNamespace from "../FluidDynamicsNamespace.js";
 import { StringManager } from "../i18n/StringManager.js";
 import type { FluidDynamicsPreferencesModel } from "./FluidDynamicsPreferencesModel.js";
@@ -30,14 +40,14 @@ export class FluidDynamicsPreferencesNode extends VBox {
     // profiles), not textColorProperty (which is near-white in default mode and
     // would be invisible on the white dialog).
     const header = new Text(prefStrings.titleStringProperty, {
-      font: new PhetFont({ size: 18, weight: "bold" }),
+      font: new PhetFont({ size: PREFERENCES_HEADING_FONT_SIZE, weight: "bold" }),
       fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
     });
 
     const highQualitySolverCheckbox = new Checkbox(
       preferencesModel.highQualitySolverProperty,
       new Text(prefStrings.highQualitySolverStringProperty, {
-        font: new PhetFont(14),
+        font: new PhetFont(CONTROL_LABEL_FONT_SIZE),
         fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
       }),
       {
@@ -74,7 +84,7 @@ export class FluidDynamicsPreferencesNode extends VBox {
         value: resolution,
         createNode: () =>
           new Text(resolutionLabels[resolution], {
-            font: new PhetFont(14),
+            font: new PhetFont(CONTROL_LABEL_FONT_SIZE),
             fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
           }),
       })),
@@ -89,7 +99,7 @@ export class FluidDynamicsPreferencesNode extends VBox {
       align: "left",
       children: [
         new Text(prefStrings.gridResolutionStringProperty, {
-          font: new PhetFont(14),
+          font: new PhetFont(CONTROL_LABEL_FONT_SIZE),
           fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
         }),
         resolutionGroup,
@@ -100,6 +110,13 @@ export class FluidDynamicsPreferencesNode extends VBox {
       align: "left",
       spacing: 12,
       children: [header, highQualitySolverCheckbox, vorticityBox, dyeFadeBox, resolutionBox],
+      // Nothing built above is torn down, and that is deliberate rather than an
+      // oversight: PreferencesModel calls createContent() once and the dialog it
+      // builds lives as long as the sim, so there is no moment at which this
+      // node would be disposed. Declaring it makes that a contract instead of a
+      // reader's assumption — a stray dispose() now asserts rather than quietly
+      // leaving the sliders' DerivedProperties listening to the preferences.
+      isDisposable: false,
     });
   }
 }
@@ -122,11 +139,14 @@ function createPreferenceSlider(
   decimals: number,
   options: PreferenceSliderOptions,
 ): VBox {
-  const valueStringProperty = new DerivedProperty([property], (value) => value.toFixed(decimals));
+  const valueStringProperty = new DerivedProperty([property], (value) => toFixed(value, decimals));
 
   const slider = new HSlider(property, range, {
     trackSize: PREFERENCE_SLIDER_TRACK_SIZE,
-    thumbSize: PREFERENCE_SLIDER_THUMB_SIZE,
+    thumbSize: SLIDER_THUMB_SIZE,
+    // Same touch dilation as the panel sliders, for the same reason.
+    thumbTouchAreaXDilation: SLIDER_THUMB_TOUCH_DILATION_X_PX,
+    thumbTouchAreaYDilation: SLIDER_THUMB_TOUCH_DILATION_Y_PX,
     accessibleName: options.accessibleName,
     // Twenty steps across the range, matching the keyboard feel of the panel
     // sliders this was promoted from.
@@ -142,11 +162,11 @@ function createPreferenceSlider(
       new HBox({
         children: [
           new Text(options.label, {
-            font: new PhetFont(14),
+            font: new PhetFont(CONTROL_LABEL_FONT_SIZE),
             fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
           }),
           new Text(valueStringProperty, {
-            font: new PhetFont(14),
+            font: new PhetFont(CONTROL_LABEL_FONT_SIZE),
             fill: FluidDynamicsColors.controlSurfaceTextColorProperty,
           }),
         ],
@@ -158,5 +178,4 @@ function createPreferenceSlider(
   });
 }
 
-const PREFERENCE_SLIDER_TRACK_SIZE = new Dimension2(220, 4);
-const PREFERENCE_SLIDER_THUMB_SIZE = new Dimension2(14, 26);
+const PREFERENCE_SLIDER_TRACK_SIZE = new Dimension2(PREFERENCE_SLIDER_TRACK_LENGTH_PX, SLIDER_TRACK_HEIGHT_PX);

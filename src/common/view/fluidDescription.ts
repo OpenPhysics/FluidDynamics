@@ -11,6 +11,7 @@
  */
 
 import { DerivedProperty, type TReadOnlyProperty } from "scenerystack/axon";
+import { toFixed } from "scenerystack/dot";
 import { StringUtils } from "scenerystack/phetcommon";
 import { StringManager } from "../../i18n/StringManager.js";
 import type { FluidModel } from "../model/FluidModel.js";
@@ -18,7 +19,14 @@ import type { ObstacleShape } from "../model/ObstacleShape.js";
 import { createRegimeStringProperty, formatReynolds } from "./FlowReadoutNode.js";
 
 /**
- * Builds the description Property. The caller owns it and must dispose it.
+ * Builds the description Property.
+ *
+ * Disposal matters more here than the usual view Property: this listens to the
+ * *global* localized string Properties as well as the model's, so an undisposed
+ * one is reachable from a page-lifetime singleton and keeps the model alive
+ * behind it. The screen views construct it and hand it to FluidScreenView, which
+ * owns it from that point and disposes it with the rest of the screen — they
+ * have no dispose() of their own to do it in.
  */
 export function createFluidDescriptionProperty(model: FluidModel): TReadOnlyProperty<string> {
   const strings = StringManager.getInstance().getFluidStrings();
@@ -51,7 +59,7 @@ export function createFluidDescriptionProperty(model: FluidModel): TReadOnlyProp
     () =>
       StringUtils.fillIn(a11y.fieldDescriptionPatternStringProperty.value, {
         shape: shapeLabels[model.obstacleShapeProperty.value].value.toLocaleLowerCase(),
-        speed: model.flowSpeedProperty.value.toFixed(2),
+        speed: toFixed(model.flowSpeedProperty.value, 2),
         reynolds: formatReynolds(model.reynoldsNumberProperty.value),
         regime: regimeStringProperty.value.toLocaleLowerCase(),
       }),

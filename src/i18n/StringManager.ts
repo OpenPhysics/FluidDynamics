@@ -132,4 +132,16 @@ export class StringManager {
   public getPreferences() {
     return stringProperties.preferences;
   }
+
+  /**
+   * Row labels and section headings for the keyboard-help dialog.
+   *
+   * These are consumed by the HotkeyData instances in
+   * common/view/ObstacleHandleKeyboard.ts, which are in turn the single source
+   * the listeners and the dialog both read — so a label here always describes a
+   * binding that actually exists.
+   */
+  public getKeyboardHelpStrings() {
+    return stringProperties.keyboardHelp;
+  }
 }

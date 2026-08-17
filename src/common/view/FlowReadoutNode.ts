@@ -14,6 +14,7 @@
  */
 
 import { DerivedProperty, type TReadOnlyProperty } from "scenerystack/axon";
+import { toFixed } from "scenerystack/dot";
 import { type EmptySelfOptions, optionize } from "scenerystack/phet-core";
 import { StringUtils } from "scenerystack/phetcommon";
 import { HBox, type HBoxOptions, Text } from "scenerystack/scenery";
@@ -113,7 +114,7 @@ export function formatReynolds(reynolds: number): string {
     return "∞";
   }
   if (reynolds < 10) {
-    return reynolds.toFixed(1);
+    return toFixed(reynolds, 1);
   }
   if (reynolds < 1000) {
     return Math.round(reynolds).toString();

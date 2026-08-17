@@ -15,7 +15,7 @@
  *  - Computed expressions (e.g. `2 * Math.PI`) may stay inline.
  */
 
-import { Bounds2, Range, Vector2 } from "scenerystack/dot";
+import { Bounds2, Dimension2, Range, Vector2 } from "scenerystack/dot";
 import FluidDynamicsNamespace from "./FluidDynamicsNamespace.js";
 
 // ── Layout / chrome (screen pixels) ───────────────────────────────────────────
@@ -39,8 +39,34 @@ export const CONTROL_PANEL_WIDTH = 264;
 /** Font size for control labels and their value readouts. */
 export const CONTROL_LABEL_FONT_SIZE = 14;
 
+/** Font size for the "Simulation" heading in Preferences. */
+export const PREFERENCES_HEADING_FONT_SIZE = 18;
+
 /** Font size for the Reynolds-number readout below the field. */
 export const READOUT_FONT_SIZE = 17;
+
+// ── Sliders ───────────────────────────────────────────────────────────────────
+
+/** Height of a slider track, in screen pixels. */
+export const SLIDER_TRACK_HEIGHT_PX = 4;
+
+/** Combined left and right inset of a panel slider's track within the panel, in screen pixels. */
+export const SLIDER_TRACK_INSET_PX = 48;
+
+/** Track length of a slider in the Preferences dialog, in screen pixels. */
+export const PREFERENCE_SLIDER_TRACK_LENGTH_PX = 220;
+
+/** Slider thumb size, in screen pixels. */
+export const SLIDER_THUMB_SIZE = new Dimension2(14, 26);
+
+/**
+ * How far a slider thumb's touch area extends past the thumb itself, in screen
+ * pixels. The thumb is drawn narrow so the sliders stack compactly beside a
+ * 350 px field; a finger needs roughly 44 px of target, which is what this
+ * dilation buys without widening the visible control.
+ */
+export const SLIDER_THUMB_TOUCH_DILATION_X_PX = 12;
+export const SLIDER_THUMB_TOUCH_DILATION_Y_PX = 6;
 
 /** Title font size in the "WebGPU is not available" panel. */
 export const WEBGPU_TITLE_FONT_SIZE = 20;
@@ -157,6 +183,14 @@ export const MAX_PHYSICS_DT = 1 / 60;
 
 /** Upper bound on substeps per frame, so a long stall cannot lock up the GPU. */
 export const MAX_SUBSTEPS_PER_FRAME = 3;
+
+/**
+ * Simulation time the step-forward button advances, in seconds — one frame at
+ * 60 fps. Numerically equal to MAX_PHYSICS_DT but a separate constant, because
+ * it answers a different question: MAX_PHYSICS_DT is what the solver's
+ * stability allows, this is what one press of the button should mean.
+ */
+export const STEP_FORWARD_DT = 1 / 60;
 
 // ── Flow parameters (SI units) ────────────────────────────────────────────────
 
@@ -295,6 +329,27 @@ export const AIRFOIL_THICKNESS_DEFAULT = 0.12;
  * surface, so dragging it is dragging the body's own maximum.
  */
 export const AIRFOIL_MAX_THICKNESS_STATION = 0.3;
+
+// ── Handle knobs ──────────────────────────────────────────────────────────────
+
+/** View radius of the visible dot on a handle knob, in screen pixels. */
+export const KNOB_DOT_RADIUS_PX = 6;
+
+/**
+ * View radius of the invisible hit/focus circle around that dot, in screen
+ * pixels. Bounded by how close two knobs get: the ellipse's foci coincide at
+ * zero eccentricity, and the airfoil's thickness knob rides near the leading
+ * edge on a slim section, so a larger mouse target would start stealing presses
+ * from its neighbour.
+ */
+export const KNOB_HIT_RADIUS_PX = 14;
+
+/**
+ * How far a knob's *touch* area extends past that hit circle, in screen pixels.
+ * Touch needs a bigger target than the mouse and tolerates the overlap, because
+ * a finger cannot aim at a 12 px dot in the first place.
+ */
+export const KNOB_TOUCH_DILATION_PX = 8;
 
 // ── Handle keyboard steps ─────────────────────────────────────────────────────
 // One press of an arrow key on a handle moves its quantity by this much; Shift
@@ -507,6 +562,24 @@ export const TOOL_TAKEOUT_CLICK_SLOP_PX = 6;
 /** Horizontal gap between the toolbox's icons, in screen pixels. */
 export const TOOLBOX_ICON_SPACING = 12;
 
+/**
+ * How far a toolbox icon's touch area extends past the icon, in screen pixels.
+ * The icons are drawn small so the panel stays out of the way of the channel;
+ * the dilation gives a finger a target without enlarging the panel. Half the
+ * icon spacing, so two dilated icons meet rather than overlap.
+ */
+export const TOOLBOX_ICON_TOUCH_DILATION_PX = 6;
+
+/** Size of the toolbox's hand-drawn ruler icon, in screen pixels. */
+export const RULER_ICON_WIDTH_PX = 52;
+export const RULER_ICON_HEIGHT_PX = 26;
+
+/** Ticks drawn along each edge of the ruler icon, and their pitch and inset, in screen pixels. */
+export const RULER_ICON_TICK_COUNT = 6;
+export const RULER_ICON_TICK_SPACING_PX = 8;
+export const RULER_ICON_TICK_INSET_PX = 6;
+export const RULER_ICON_TICK_LENGTH_PX = 9;
+
 // ── Scale bar ─────────────────────────────────────────────────────────────────
 
 /**
@@ -539,13 +612,27 @@ export const RE_SHEDDING_ONSET = 47;
 /** Above this the shed vortices lose coherence and the wake reads as turbulent. */
 export const RE_TURBULENT_ONSET = 200;
 
+// ── Namespace registration ────────────────────────────────────────────────────
+// Exposes every constant at phet.fluidDynamics.FluidDynamicsConstants for
+// console debugging. This object must list every export above; a test in
+// tests/FluidDynamicsConstants.test.ts compares the two so a constant added
+// later cannot be quietly left out, which is how eleven of them went missing
+// when the shaping handles landed.
+
 FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   SCREEN_VIEW_MARGIN,
   PANEL_CORNER_RADIUS,
   FIELD_VIEW_BOUNDS,
   CONTROL_PANEL_WIDTH,
   CONTROL_LABEL_FONT_SIZE,
+  PREFERENCES_HEADING_FONT_SIZE,
   READOUT_FONT_SIZE,
+  SLIDER_TRACK_HEIGHT_PX,
+  SLIDER_TRACK_INSET_PX,
+  PREFERENCE_SLIDER_TRACK_LENGTH_PX,
+  SLIDER_THUMB_SIZE,
+  SLIDER_THUMB_TOUCH_DILATION_X_PX,
+  SLIDER_THUMB_TOUCH_DILATION_Y_PX,
   WEBGPU_TITLE_FONT_SIZE,
   WEBGPU_MESSAGE_FONT_SIZE,
   WEBGPU_MESSAGE_MAX_WIDTH,
@@ -570,6 +657,7 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   DIFFUSION_SKIP_ALPHA,
   MAX_PHYSICS_DT,
   MAX_SUBSTEPS_PER_FRAME,
+  STEP_FORWARD_DT,
   FLOW_SPEED_RANGE,
   FLOW_SPEED_DEFAULT,
   FLOW_SPEED_RESPONSE_TIME,
@@ -584,6 +672,18 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   OBSTACLE_CLEARANCE_M,
   obstacleDragBounds,
   OBSTACLE_KEYBOARD_SPEED_MPS,
+  OBSTACLE_FOCAL_MAX_FRACTION,
+  AIRFOIL_THICKNESS_RANGE,
+  AIRFOIL_THICKNESS_DEFAULT,
+  AIRFOIL_MAX_THICKNESS_STATION,
+  KNOB_DOT_RADIUS_PX,
+  KNOB_HIT_RADIUS_PX,
+  KNOB_TOUCH_DILATION_PX,
+  SIZE_KEYBOARD_STEP_M,
+  ANGLE_KEYBOARD_STEP_DEG,
+  FOCAL_KEYBOARD_STEP_M,
+  THICKNESS_KEYBOARD_STEP,
+  HANDLE_KEYBOARD_STEP_FACTOR,
   VORTICITY_RANGE,
   VORTICITY_DEFAULT,
   POINTER_RADIUS_M,
@@ -611,7 +711,16 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   TOOL_DRAG_MARGIN_M,
   TOOLBOX_RETURN_TOLERANCE_PX,
   TAPE_TAKEOUT_OFFSET_PX,
+  RULER_TAKEOUT_GRAB_FRACTION,
+  TOOL_TAKEOUT_CLICK_SLOP_PX,
   TOOLBOX_ICON_SPACING,
+  TOOLBOX_ICON_TOUCH_DILATION_PX,
+  RULER_ICON_WIDTH_PX,
+  RULER_ICON_HEIGHT_PX,
+  RULER_ICON_TICK_COUNT,
+  RULER_ICON_TICK_SPACING_PX,
+  RULER_ICON_TICK_INSET_PX,
+  RULER_ICON_TICK_LENGTH_PX,
   SCALE_BAR_LENGTH_M,
   SCALE_BAR_TICK_HEIGHT_PX,
   SCALE_BAR_STROKE_WIDTH_PX,

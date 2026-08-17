@@ -3,11 +3,14 @@
  *
  * The body the flow has to get around.
  *
- * Each shape is evaluated as a signed distance function in the WGSL shaders
- * rather than rasterized into a mask texture, so the obstacle can be dragged and
- * resized with no GPU resource churn — only a uniform changes. The numeric codes
- * below are what gets written into that uniform, so they must agree with the
- * `obstacleShape` branch in shaders/obstacle.wgsl.
+ * Each shape is a signed distance function, evaluated by `obstacleSDF()` in
+ * shaders/common.wgsl. The numeric codes below are what gets written into the
+ * `obstacleShape` uniform, so they must agree with the branch that function
+ * takes on it.
+ *
+ * (The SDF is baked into a mask texture by mask.wgsl when the body moves rather
+ * than being re-evaluated per cell per kernel; see the notes in
+ * WebGPUFluidEngine.ts. The codes are the contract either way.)
  *
  * `erasableSyntaxOnly` rules out a TS enum, so this is an as-const union.
  */

@@ -14,8 +14,8 @@
  */
 
 import { Multilink, type NumberProperty } from "scenerystack/axon";
-import { Vector2, type Vector2Property } from "scenerystack/dot";
-import type { ModelViewTransform2 } from "scenerystack/phetcommon";
+import { toFixed, Vector2, type Vector2Property } from "scenerystack/dot";
+import { type ModelViewTransform2, StringUtils } from "scenerystack/phetcommon";
 import { DragListener, Node } from "scenerystack/scenery";
 import {
   AIRFOIL_MAX_THICKNESS_STATION,
@@ -86,19 +86,32 @@ export class ObstacleThicknessHandleNode extends Node {
     });
     knob.addInputListener(dragListener);
 
+    // As on the other knobs: the shader draws the section, so an arrow press is
+    // silent to a screen reader unless the new value is announced here.
+    const announceThickness = (): void => {
+      knob.addAccessibleResponse(
+        StringUtils.fillIn(a11y.thicknessResponsePatternStringProperty.value, {
+          value: toFixed(thicknessProperty.value * 100, 0),
+        }),
+      );
+    };
+
     const keyListener = createArrowKeyListener({
       up: (fine) => {
         thicknessProperty.value = AIRFOIL_THICKNESS_RANGE.constrainValue(
           thicknessProperty.value + keyboardStep(THICKNESS_KEYBOARD_STEP, fine),
         );
+        announceThickness();
       },
       down: (fine) => {
         thicknessProperty.value = AIRFOIL_THICKNESS_RANGE.constrainValue(
           thicknessProperty.value - keyboardStep(THICKNESS_KEYBOARD_STEP, fine),
         );
+        announceThickness();
       },
-      // The thickness has no use for sideways arrows, but consuming them keeps
-      // focus from wandering off mid-interaction.
+      // The thickness has no use for sideways arrows. They are still bound, so
+      // that KeyboardListener consumes them and they neither scroll the page
+      // nor pan the zoomed view out from under the learner mid-interaction.
       // biome-ignore lint/suspicious/noEmptyBlockStatements: consuming the key is the whole point
       left: () => {},
       // biome-ignore lint/suspicious/noEmptyBlockStatements: consuming the key is the whole point
@@ -108,6 +121,7 @@ export class ObstacleThicknessHandleNode extends Node {
 
     this.disposeObstacleThicknessHandleNode = () => {
       knob.removeInputListener(keyListener);
+      keyListener.dispose();
       knob.removeInputListener(dragListener);
       dragListener.dispose();
       positionListener.dispose();

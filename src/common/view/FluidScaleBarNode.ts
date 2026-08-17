@@ -12,6 +12,7 @@
  */
 
 import { DerivedProperty } from "scenerystack/axon";
+import { toFixed } from "scenerystack/dot";
 import { type EmptySelfOptions, optionize } from "scenerystack/phet-core";
 import { type ModelViewTransform2, StringUtils } from "scenerystack/phetcommon";
 import { Line, Node, type NodeOptions, Text } from "scenerystack/scenery";
@@ -39,7 +40,7 @@ export class FluidScaleBarNode extends Node {
 
     // The value follows the constant, so shortening the bar relabels it.
     const labelStringProperty = new DerivedProperty([strings.controls.scaleBarPatternStringProperty], (pattern) =>
-      StringUtils.fillIn(pattern, { value: SCALE_BAR_LENGTH_M.toFixed(1) }),
+      StringUtils.fillIn(pattern, { value: toFixed(SCALE_BAR_LENGTH_M, 1) }),
     );
     const label = new Text(labelStringProperty, {
       font: new PhetFont(CONTROL_LABEL_FONT_SIZE),

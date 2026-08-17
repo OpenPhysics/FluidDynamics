@@ -2,15 +2,16 @@
  * LabKeyboardHelpContent.ts
  *
  * Content for the keyboard-help dialog (the "?" button in the navigation bar).
- * The template's only interactions are buttons and Reset All, so a single
- * basic-actions section covers the available keyboard controls. Add a slider or
- * combo-box section here as the simulation grows.
+ *
+ * The Lab screen exposes every interaction the sim has, so both of
+ * FluidKeyboardHelpContent's optional groups are on: the shaping handles
+ * (tilt, the ellipse's foci, the airfoil's thickness) and the two combo boxes.
  */
 
-import { BasicActionsKeyboardHelpSection, TwoColumnKeyboardHelpContent } from "scenerystack/scenery-phet";
+import { FluidKeyboardHelpContent } from "../../common/view/FluidKeyboardHelpContent.js";
 
-export class LabKeyboardHelpContent extends TwoColumnKeyboardHelpContent {
+export class LabKeyboardHelpContent extends FluidKeyboardHelpContent {
   public constructor() {
-    super([new BasicActionsKeyboardHelpSection()], []);
+    super({ showShapingControls: true, showComboBoxControls: true });
   }
 }

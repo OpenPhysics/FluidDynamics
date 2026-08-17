@@ -30,7 +30,7 @@
  */
 
 import { DerivedProperty, type NumberProperty, type Property, type TReadOnlyProperty } from "scenerystack/axon";
-import { Dimension2, type Range } from "scenerystack/dot";
+import { Dimension2, type Range, toFixed } from "scenerystack/dot";
 import { optionize } from "scenerystack/phet-core";
 import { StringUtils } from "scenerystack/phetcommon";
 import { HBox, type Node, Text, VBox } from "scenerystack/scenery";
@@ -41,6 +41,11 @@ import {
   CONTROL_LABEL_FONT_SIZE,
   CONTROL_PANEL_WIDTH,
   FLOW_SPEED_RANGE,
+  SLIDER_THUMB_SIZE,
+  SLIDER_THUMB_TOUCH_DILATION_X_PX,
+  SLIDER_THUMB_TOUCH_DILATION_Y_PX,
+  SLIDER_TRACK_HEIGHT_PX,
+  SLIDER_TRACK_INSET_PX,
   VISCOSITY_RANGE,
 } from "../../FluidDynamicsConstants.js";
 import { StringManager } from "../../i18n/StringManager.js";
@@ -205,7 +210,7 @@ function createSlider(
   accessibleHelpText?: TReadOnlyProperty<string>,
 ): { node: Node; slider: Node; dispose: () => void } {
   const valueStringProperty = new DerivedProperty([property, valuePattern], (value, pattern) =>
-    StringUtils.fillIn(pattern, { value: value.toFixed(decimals) }),
+    StringUtils.fillIn(pattern, { value: toFixed(value, decimals) }),
   );
 
   const labelText = new Text(label, {
@@ -222,6 +227,11 @@ function createSlider(
   const slider = new HSlider(property, range, {
     trackSize: SLIDER_TRACK_SIZE,
     thumbSize: SLIDER_THUMB_SIZE,
+    // The thumb is drawn narrow so the sliders stack compactly beside the
+    // field; a finger needs a bigger target than that, and the dilation gives
+    // it one without widening the visible control.
+    thumbTouchAreaXDilation: SLIDER_THUMB_TOUCH_DILATION_X_PX,
+    thumbTouchAreaYDilation: SLIDER_THUMB_TOUCH_DILATION_Y_PX,
     accessibleName,
     ...(accessibleHelpText !== undefined && { accessibleHelpText }),
     // Twenty steps across the range: fine enough to explore a transition,
@@ -299,5 +309,4 @@ function createComboBox<T extends string>(
   };
 }
 
-const SLIDER_TRACK_SIZE = new Dimension2(CONTROL_PANEL_WIDTH - 48, 4);
-const SLIDER_THUMB_SIZE = new Dimension2(14, 26);
+const SLIDER_TRACK_SIZE = new Dimension2(CONTROL_PANEL_WIDTH - SLIDER_TRACK_INSET_PX, SLIDER_TRACK_HEIGHT_PX);

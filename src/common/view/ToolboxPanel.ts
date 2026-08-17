@@ -56,7 +56,14 @@ import {
   Rectangle,
 } from "scenerystack/scenery";
 import { MeasuringTapeNode, type MeasuringTapeUnits } from "scenerystack/scenery-phet";
+import FluidDynamicsColors from "../../FluidDynamicsColors.js";
 import {
+  RULER_ICON_HEIGHT_PX,
+  RULER_ICON_TICK_COUNT,
+  RULER_ICON_TICK_INSET_PX,
+  RULER_ICON_TICK_LENGTH_PX,
+  RULER_ICON_TICK_SPACING_PX,
+  RULER_ICON_WIDTH_PX,
   RULER_POSITION_DEFAULT,
   RULER_TAKEOUT_GRAB_FRACTION,
   TAPE_BASE_DEFAULT,
@@ -66,6 +73,7 @@ import {
   TOOL_DRAG_MARGIN_M,
   TOOL_TAKEOUT_CLICK_SLOP_PX,
   TOOLBOX_ICON_SPACING,
+  TOOLBOX_ICON_TOUCH_DILATION_PX,
   TOOLBOX_RETURN_TOLERANCE_PX,
 } from "../../FluidDynamicsConstants.js";
 import { StringManager } from "../../i18n/StringManager.js";
@@ -393,41 +401,71 @@ export class ToolboxPanel extends FluidDynamicsPanel {
  */
 function createTapeIcon(): Node {
   const a11y = StringManager.getInstance().getFluidA11yStrings();
-  return new Node({
-    children: [MeasuringTapeNode.createIcon()],
-    cursor: "pointer",
-    tagName: "button",
-    // The icon is where a take-out gesture starts, so its parallel-DOM element
-    // belongs over the icon rather than parked off-screen: an iOS VoiceOver tap
-    // is dispatched at the element's position.
-    positionInPDOM: true,
-    accessibleName: a11y.toolboxTapeNameStringProperty,
-    accessibleHelpText: a11y.toolboxTapeHelpTextStringProperty,
-  });
+  return withTouchTarget(
+    new Node({
+      children: [MeasuringTapeNode.createIcon()],
+      cursor: "pointer",
+      tagName: "button",
+      // The icon is where a take-out gesture starts, so its parallel-DOM element
+      // belongs over the icon rather than parked off-screen: an iOS VoiceOver tap
+      // is dispatched at the element's position.
+      positionInPDOM: true,
+      accessibleName: a11y.toolboxTapeNameStringProperty,
+      accessibleHelpText: a11y.toolboxTapeHelpTextStringProperty,
+    }),
+  );
 }
 
 /** A small ruler for the toolbox, hand-drawn in the screen-icons house style. */
 function createRulerIcon(): Node {
   const a11y = StringManager.getInstance().getFluidA11yStrings();
-  const width = 52;
-  const height = 26;
   const ticks = new Shape();
-  for (let i = 0; i <= 5; i++) {
-    const x = 6 + i * 8;
-    ticks.moveTo(x, 0).lineTo(x, 9);
-    ticks.moveTo(x, height).lineTo(x, height - 9);
+  for (let i = 0; i < RULER_ICON_TICK_COUNT; i++) {
+    const x = RULER_ICON_TICK_INSET_PX + i * RULER_ICON_TICK_SPACING_PX;
+    ticks.moveTo(x, 0).lineTo(x, RULER_ICON_TICK_LENGTH_PX);
+    ticks.moveTo(x, RULER_ICON_HEIGHT_PX).lineTo(x, RULER_ICON_HEIGHT_PX - RULER_ICON_TICK_LENGTH_PX);
   }
-  return new Node({
-    children: [
-      new Rectangle(0, 0, width, height, { fill: "rgb(236, 225, 113)", stroke: "black", lineWidth: 1 }),
-      new Path(ticks, { stroke: "black", lineWidth: 1 }),
-    ],
-    cursor: "pointer",
-    // A <button>, and positioned in the PDOM, for the same reasons as the tape
-    // icon above.
-    tagName: "button",
-    positionInPDOM: true,
-    accessibleName: a11y.toolboxRulerNameStringProperty,
-    accessibleHelpText: a11y.toolboxRulerHelpTextStringProperty,
-  });
+  return withTouchTarget(
+    new Node({
+      children: [
+        new Rectangle(0, 0, RULER_ICON_WIDTH_PX, RULER_ICON_HEIGHT_PX, {
+          fill: FluidDynamicsColors.rulerIconFillColorProperty,
+          stroke: FluidDynamicsColors.rulerIconStrokeColorProperty,
+          lineWidth: 1,
+        }),
+        new Path(ticks, { stroke: FluidDynamicsColors.rulerIconStrokeColorProperty, lineWidth: 1 }),
+      ],
+      cursor: "pointer",
+      // A <button>, and positioned in the PDOM, for the same reasons as the tape
+      // icon above.
+      tagName: "button",
+      positionInPDOM: true,
+      accessibleName: a11y.toolboxRulerNameStringProperty,
+      accessibleHelpText: a11y.toolboxRulerHelpTextStringProperty,
+    }),
+  );
+}
+
+/**
+ * Gives an icon a touch area larger than the icon itself.
+ *
+ * The icons are drawn small so the toolbox stays out of the channel's way, which
+ * leaves them below a comfortable finger target. The dilation is half the gap
+ * between them, so two dilated icons meet rather than overlap and a press
+ * between them still resolves to the one it is nearer.
+ *
+ * The area *follows* the bounds rather than being set once, which is load
+ * bearing for the tape: `MeasuringTapeNode.createIcon()` builds a live tape,
+ * then asynchronously rasterizes it and swaps in an `Image` with different
+ * bounds. A touch area snapshotted at construction ends up floating up and to
+ * the left of the icon it is supposed to cover — visible under
+ * `?showPointerAreas`, and invisible to everything else.
+ */
+function withTouchTarget(icon: Node): Node {
+  const updateTouchArea = (localBounds: Bounds2): void => {
+    icon.touchArea = localBounds.isFinite() ? localBounds.dilated(TOOLBOX_ICON_TOUCH_DILATION_PX) : null;
+  };
+  icon.localBoundsProperty.link(updateTouchArea);
+  icon.disposeEmitter.addListener(() => icon.localBoundsProperty.unlink(updateTouchArea));
+  return icon;
 }

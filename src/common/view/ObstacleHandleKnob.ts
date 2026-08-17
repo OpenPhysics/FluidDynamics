@@ -10,17 +10,19 @@
  * flow the learner is looking at — so the hit area is an invisible larger
  * circle around it, which is also the focusable node carrying the keyboard
  * interaction.
+ *
+ * That hit circle is as large as it can be without the knobs colliding: the
+ * foci sit on top of each other at zero eccentricity, and the thickness knob
+ * rides close to the leading edge on a slim airfoil. Touch needs more than
+ * that, so the touch area is dilated past the visible geometry instead — a
+ * finger gets a comfortable target without the mouse gaining one that overlaps
+ * its neighbour.
  */
 
 import type { TReadOnlyProperty } from "scenerystack/axon";
 import { Circle } from "scenerystack/scenery";
 import FluidDynamicsColors from "../../FluidDynamicsColors.js";
-
-/** View radius of the visible dot, in screen pixels. */
-const DOT_RADIUS = 6;
-
-/** View radius of the invisible hit area around the dot, in screen pixels. */
-const HIT_RADIUS = 14;
+import { KNOB_DOT_RADIUS_PX, KNOB_HIT_RADIUS_PX, KNOB_TOUCH_DILATION_PX } from "../../FluidDynamicsConstants.js";
 
 /**
  * The invisible hit/focus circle. The caller adds its input listeners here,
@@ -31,7 +33,7 @@ export function createKnobHitArea(
   accessibleName: TReadOnlyProperty<string>,
   accessibleHelpText: TReadOnlyProperty<string>,
 ): Circle {
-  return new Circle(HIT_RADIUS, {
+  const knob = new Circle(KNOB_HIT_RADIUS_PX, {
     // Transparent rather than invisible: an invisible Node is removed from the
     // parallel DOM and can be neither focused nor hit-tested.
     fill: "rgba(0,0,0,0)",
@@ -41,13 +43,15 @@ export function createKnobHitArea(
     accessibleName,
     accessibleHelpText,
   });
+  knob.touchArea = knob.localBounds.dilated(KNOB_TOUCH_DILATION_PX);
+  return knob;
 }
 
 /** The visible dot, centered in its hit area. */
 export function createKnobDot(): Circle {
-  return new Circle(DOT_RADIUS, {
+  return new Circle(KNOB_DOT_RADIUS_PX, {
     fill: FluidDynamicsColors.accentColorProperty,
-    stroke: "rgba(10, 11, 16, 0.85)",
+    stroke: FluidDynamicsColors.handleKnobStrokeColorProperty,
     lineWidth: 2,
     pickable: false,
   });
