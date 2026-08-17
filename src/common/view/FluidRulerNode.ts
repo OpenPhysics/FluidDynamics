@@ -85,8 +85,13 @@ export class FluidRulerNode extends Node {
     const options = optionize<FluidRulerNodeOptions, SelfOptions, NodeOptions>()(
       {
         onDragEnded: null,
+        cursor: "pointer",
         tagName: "div",
         focusable: true,
+        // The ruler moves, and its parallel-DOM element should move with it: a
+        // VoiceOver double-tap is dispatched at the element's position, so an
+        // element parked off-screen puts the gesture somewhere the ruler is not.
+        positionInPDOM: true,
         accessibleName: a11y.rulerNameStringProperty,
         accessibleHelpText: a11y.rulerHelpTextStringProperty,
         children: [
@@ -124,11 +129,15 @@ export class FluidRulerNode extends Node {
     };
     centerProperty.link(positionListener);
 
+    // moveToFront on every grab, the way MeasuringTapeNode does for its base:
+    // the two tools are siblings, so whichever was picked up last has to be the
+    // one on top or a grab can land on the other tool's body.
     this.dragListener = new DragListener({
       targetNode: this,
       transform: modelViewTransform,
       positionProperty: centerProperty,
       dragBoundsProperty,
+      start: () => this.moveToFront(),
       end: () => onDragEnded?.(),
     });
     this.addInputListener(this.dragListener);
@@ -139,6 +148,7 @@ export class FluidRulerNode extends Node {
       dragBoundsProperty,
       dragSpeed: RULER_KEYBOARD_SPEED_MPS,
       shiftDragSpeed: RULER_KEYBOARD_SPEED_MPS / 4,
+      start: () => this.moveToFront(),
       end: () => onDragEnded?.(),
     });
     this.addInputListener(keyboardListener);
@@ -153,13 +163,23 @@ export class FluidRulerNode extends Node {
     };
   }
 
+  /** Whether a pointer is currently dragging the ruler. */
+  public get isDragging(): boolean {
+    return this.dragListener.isPressed;
+  }
+
   /**
    * Hands an in-progress pointer press to the ruler, so a drag started on the
    * toolbox icon continues as a drag of the ruler itself. The same forwarding
    * MeasuringTapeNode.startBaseDrag() performs for the tape.
+   *
+   * Returns whether the ruler took the press. A DragListener refuses a pointer
+   * that another listener has already *attached* itself to, so the caller's own
+   * listener must be unattached (see ToolboxPanel) — and must be told when the
+   * hand-off did not happen, because then no drag, and no drag end, follows.
    */
-  public startDrag(event: PressListenerEvent): void {
-    this.dragListener.press(event, this);
+  public startDrag(event: PressListenerEvent): boolean {
+    return this.dragListener.press(event, this);
   }
 
   public override dispose(): void {

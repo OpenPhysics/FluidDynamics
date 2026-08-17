@@ -211,11 +211,20 @@ export class FluidScreenView extends ScreenView {
     // its parallel-DOM content stays hidden for good. The links fire
     // immediately (tools start in the toolbox), hiding through the same path
     // every later show retraces.
+    // Hiding a tool also interrupts any drag of it. Reset All can empty the
+    // toolbox with a finger still on a tool, and a drag that outlives its node
+    // goes on writing positions no one can see until the finger lifts.
     const tapeVisibleListener = (visible: boolean): void => {
+      if (!visible) {
+        toolboxPanel.measuringTapeNode.interruptSubtreeInput();
+      }
       toolboxPanel.measuringTapeNode.visible = visible;
     };
     model.measuringTapeVisibleProperty.link(tapeVisibleListener);
     const rulerVisibleListener = (visible: boolean): void => {
+      if (!visible) {
+        toolboxPanel.rulerNode.interruptSubtreeInput();
+      }
       toolboxPanel.rulerNode.visible = visible;
     };
     model.rulerVisibleProperty.link(rulerVisibleListener);

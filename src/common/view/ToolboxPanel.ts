@@ -5,15 +5,33 @@
  * of it.
  *
  * The panel itself is a small FluidDynamicsPanel at the bottom-left holding
- * two focusable icons. Pressing an icon when its tool is hidden takes the tool
+ * two icons, each a <button> so Enter and Space reach the PressListener below
+ * (see createTapeIcon). Pressing an icon when its tool is hidden takes the tool
  * out — at the pointer, with the drag forwarded so the press becomes a drag of
  * the tool itself (the same forwarding MeasuringTapeNode.startBaseDrag()
- * exists to provide). A forwarded press is released as part of the icon's own
- * gesture and never delivers the tool's drag-end callback, so a take-out can
- * never read as "dropped straight back on the toolbox" — no guard flags
- * needed. Pressing the icon while the tool is out puts it back, which is also
- * the keyboard-only path. Ending a genuine drag of a tool over the panel puts
- * it back too.
+ * exists to provide). A keyboard press has no pointer to place the tool under
+ * and no gesture to forward, so it places the tool at its default position
+ * instead; see isKeyboardActivation. Pressing the icon while the tool is out
+ * puts it back, which is the keyboard put-away path. Ending a genuine drag of a
+ * tool over the panel puts it back too.
+ *
+ * Three things make that hand-off work, and each is easy to undo by accident:
+ *
+ *   - The icons' PressListeners are `attach: false`. PressListener attaches
+ *     itself to the pointer *before* it runs the press callback, and both
+ *     DragListener and PressListener refuse to press a pointer that another
+ *     listener has attached. An attaching icon listener therefore swallows the
+ *     take-out silently: the tool appears at the pointer and then sits there,
+ *     because nothing is following the pointer at all.
+ *   - The take-out offsets are small, so the tool comes out *under* the hand.
+ *     A forwarded drag keeps whatever offset the take-out established, for the
+ *     whole gesture — the offset is not a one-frame placement.
+ *   - Because the tool comes out under the hand, and the hand is over the
+ *     toolbox, the drag that took it out always ends over the toolbox. A
+ *     one-shot origin per tool (tapeTakeOutOrigin / rulerTakeOutOrigin)
+ *     swallows the return test for exactly that drag, and doubles as the
+ *     click-versus-drag test: a press that never travelled parks the tool at
+ *     its default position rather than leaving it draped over the toolbox.
  *
  * The tool nodes this class creates are deliberately NOT children of the
  * panel: they belong among the ScreenView's topmost children so they float
@@ -28,14 +46,25 @@ import { Property } from "scenerystack/axon";
 import { type Bounds2, Vector2 } from "scenerystack/dot";
 import { Shape } from "scenerystack/kite";
 import type { ModelViewTransform2 } from "scenerystack/phetcommon";
-import { HBox, Node, Path, PressListener, type PressListenerEvent, Rectangle } from "scenerystack/scenery";
+import {
+  FocusManager,
+  HBox,
+  Node,
+  Path,
+  PressListener,
+  type PressListenerEvent,
+  Rectangle,
+} from "scenerystack/scenery";
 import { MeasuringTapeNode, type MeasuringTapeUnits } from "scenerystack/scenery-phet";
 import {
-  RULER_HEIGHT_PX,
-  RULER_INSETS_PX,
-  RULER_LENGTH_M,
+  RULER_POSITION_DEFAULT,
+  RULER_TAKEOUT_GRAB_FRACTION,
+  TAPE_BASE_DEFAULT,
   TAPE_TAKEOUT_OFFSET_PX,
+  TAPE_TAKEOUT_SPAN_M,
+  TAPE_TIP_DEFAULT,
   TOOL_DRAG_MARGIN_M,
+  TOOL_TAKEOUT_CLICK_SLOP_PX,
   TOOLBOX_ICON_SPACING,
   TOOLBOX_RETURN_TOLERANCE_PX,
 } from "../../FluidDynamicsConstants.js";
@@ -56,6 +85,18 @@ type SelfOptions = {
 };
 
 export type ToolboxPanelOptions = SelfOptions & FluidDynamicsPanelOptions;
+
+/**
+ * Whether this press came from the keyboard rather than from a real pointer.
+ *
+ * It matters because the take-out gesture forwards the press to the tool's own
+ * drag listener, and a drag begun on the PDOM pointer has no pointer-up to end
+ * it — the tool would stay welded to the pointer for the rest of the session.
+ * The keyboard paths below place the tool instead of dragging it.
+ */
+function isKeyboardActivation(event: PressListenerEvent): boolean {
+  return event.pointer.type === "pdom";
+}
 
 /** Where the tape's base and tip may sit while it is out, in model metres. */
 function createTapeDragBounds(modelViewTransform: ModelViewTransform2, screenViewBounds: Bounds2): Bounds2 {
@@ -78,6 +119,16 @@ export class ToolboxPanel extends FluidDynamicsPanel {
   private readonly modelViewTransform: ModelViewTransform2;
   private readonly globalToViewPoint: (globalPoint: Vector2) => Vector2;
   private readonly tapeDragBounds: Bounds2;
+
+  /** Where the ruler's centre goes relative to a pointer taking it out, in view px. */
+  private readonly rulerTakeOutOffsetPx: Vector2;
+
+  /** How far a take-out has to travel to be a drag rather than a click, in metres. */
+  private readonly takeOutClickSlopM: number;
+
+  /** Where a take-out placed the tool, for as long as that gesture is in flight. */
+  private tapeTakeOutOrigin: Vector2 | null = null;
+  private rulerTakeOutOrigin: Vector2 | null = null;
 
   private readonly tapeUnitsProperty: Property<MeasuringTapeUnits>;
   private readonly disposeToolboxPanel: () => void;
@@ -117,15 +168,25 @@ export class ToolboxPanel extends FluidDynamicsPanel {
       modelViewTransform,
       dragBounds: this.tapeDragBounds,
       significantFigures: 2,
-      baseDragEnded: () => this.considerTapeReturn(model.tapeBasePositionProperty.value),
-      tipDragListenerOptions: {
-        end: () => this.considerTapeReturn(model.tapeTipPositionProperty.value),
-      },
+      // Only the base can put the tape away. The tip is how the learner reaches
+      // out to what they are measuring, and something worth measuring can sit
+      // over the toolbox — a tip dropped there must not vanish the whole tape.
+      baseDragEnded: () => this.endTapeDrag(),
     });
 
     this.rulerNode = new FluidRulerNode(model.rulerPositionProperty, modelViewTransform, screenViewBounds, {
-      onDragEnded: () => this.considerRulerReturn(),
+      onDragEnded: () => this.endRulerDrag(),
     });
+
+    // The pointer should land on the ruler's body when it comes out, so the
+    // grab point is a fraction of the ruler's own size rather than a guess in
+    // pixels — the ruler is as wide as one channel metre, whatever that is here.
+    const rulerLocalBounds = this.rulerNode.localBounds;
+    this.rulerTakeOutOffsetPx = new Vector2(
+      (0.5 - RULER_TAKEOUT_GRAB_FRACTION.x) * rulerLocalBounds.width,
+      (0.5 - RULER_TAKEOUT_GRAB_FRACTION.y) * rulerLocalBounds.height,
+    );
+    this.takeOutClickSlopM = TOOL_TAKEOUT_CLICK_SLOP_PX / Math.abs(modelViewTransform.modelToViewDeltaX(1));
 
     // Visibility is deliberately NOT linked here. The tools are added to the
     // scene graph by FluidScreenView after this constructor returns, and a node
@@ -135,11 +196,15 @@ export class ToolboxPanel extends FluidDynamicsPanel {
     // once the nodes are in the tree, so the first hide travels the path every
     // later show retracees.
 
+    // attach: false is load bearing — see the take-out notes at the top of the
+    // file. An attaching listener here silently costs the sim its drag-out.
     const tapeIconListener = new PressListener({
+      attach: false,
       press: (event: PressListenerEvent) => this.pressTapeIcon(event),
     });
     tapeIcon.addInputListener(tapeIconListener);
     const rulerIconListener = new PressListener({
+      attach: false,
       press: (event: PressListenerEvent) => this.pressRulerIcon(event),
     });
     rulerIcon.addInputListener(rulerIconListener);
@@ -157,45 +222,108 @@ export class ToolboxPanel extends FluidDynamicsPanel {
 
   /** Icon press: take the tape out under the pointer, or put it away. */
   private pressTapeIcon(event: PressListenerEvent): void {
+    if (
+      this.measuringTapeNode.isBaseUserControlledProperty.value ||
+      this.measuringTapeNode.isTipUserControlledProperty.value
+    ) {
+      // A second finger on the icon must not put away a tape the first one is
+      // still dragging — the drag would carry on with nothing to show for it.
+      return;
+    }
     if (this.model.measuringTapeVisibleProperty.value) {
-      this.model.measuringTapeVisibleProperty.value = false;
+      this.putTapeAway();
       return;
     }
-    const base = this.modelViewTransform.viewToModelPosition(
-      this.globalToViewPoint(event.pointer.point).plus(TAPE_TAKEOUT_OFFSET_PX),
+    if (isKeyboardActivation(event)) {
+      // No pointer to place the tape under, and no gesture to hand it to: put
+      // it where Reset All would, out in the channel where it is useful, and
+      // let the learner take over with the tape's own keyboard dragging.
+      this.placeTapeAtDefault();
+      this.model.measuringTapeVisibleProperty.value = true;
+      return;
+    }
+    const base = this.tapeDragBounds.getConstrainedPoint(
+      this.modelViewTransform.viewToModelPosition(
+        this.globalToViewPoint(event.pointer.point).plus(TAPE_TAKEOUT_OFFSET_PX),
+      ),
     );
-    const tip = base.plus(new Vector2(0.55, 0.3));
-    this.model.tapeBasePositionProperty.value = this.tapeDragBounds.getConstrainedPoint(base);
-    this.model.tapeTipPositionProperty.value = this.tapeDragBounds.getConstrainedPoint(tip);
+    this.model.tapeBasePositionProperty.value = base;
+    this.model.tapeTipPositionProperty.value = this.tapeDragBounds.getConstrainedPoint(base.plus(TAPE_TAKEOUT_SPAN_M));
     this.model.measuringTapeVisibleProperty.value = true;
+
     this.measuringTapeNode.startBaseDrag(event);
+    if (this.measuringTapeNode.isBaseUserControlledProperty.value) {
+      this.tapeTakeOutOrigin = base;
+    } else {
+      // The tape refused the press (another listener owns the pointer). No drag
+      // and no drag end are coming, so leave it where the keyboard path would
+      // rather than face down on the toolbox it was pulled from.
+      this.placeTapeAtDefault();
+    }
   }
 
-  /** Icon press: take the ruler out beside the pointer, or put it away. */
+  /** Icon press: take the ruler out under the pointer, or put it away. */
   private pressRulerIcon(event: PressListenerEvent): void {
+    if (this.rulerNode.isDragging) {
+      return; // as for the tape: a second finger must not cancel a live drag
+    }
     if (this.model.rulerVisibleProperty.value) {
-      this.model.rulerVisibleProperty.value = false;
+      this.putRulerAway();
       return;
     }
-    const scale = Math.abs(this.modelViewTransform.modelToViewDeltaX(1));
-    const offsetView = new Vector2((RULER_LENGTH_M * scale) / 2 + RULER_INSETS_PX + 16, -(RULER_HEIGHT_PX + 24));
-    const centre = this.modelViewTransform.viewToModelPosition(
-      this.globalToViewPoint(event.pointer.point).plus(offsetView),
+    if (isKeyboardActivation(event)) {
+      // As for the tape: place it, do not hand it a drag.
+      this.model.rulerPositionProperty.value = RULER_POSITION_DEFAULT;
+      this.model.rulerVisibleProperty.value = true;
+      return;
+    }
+    const centre = this.rulerNode.dragBounds.getConstrainedPoint(
+      this.modelViewTransform.viewToModelPosition(
+        this.globalToViewPoint(event.pointer.point).plus(this.rulerTakeOutOffsetPx),
+      ),
     );
-    this.model.rulerPositionProperty.value = this.rulerNode.dragBounds.getConstrainedPoint(centre);
+    this.model.rulerPositionProperty.value = centre;
     this.model.rulerVisibleProperty.value = true;
-    this.rulerNode.startDrag(event);
-  }
 
-  /** Drag end over the toolbox puts the tape away. */
-  private considerTapeReturn(grabModelPoint: Vector2): void {
-    if (this.returnBounds.containsPoint(this.modelViewTransform.modelToViewPosition(grabModelPoint))) {
-      this.model.measuringTapeVisibleProperty.value = false;
+    if (this.rulerNode.startDrag(event)) {
+      this.rulerTakeOutOrigin = centre;
+    } else {
+      this.model.rulerPositionProperty.value = RULER_POSITION_DEFAULT;
     }
   }
 
-  /** Drag end over the toolbox puts the ruler away. */
-  private considerRulerReturn(): void {
+  /**
+   * End of a pointer or keyboard drag of the tape's base: put it away if it was
+   * dropped on the toolbox, unless this was the drag that took it out.
+   */
+  private endTapeDrag(): void {
+    const takeOutOrigin = this.tapeTakeOutOrigin;
+    this.tapeTakeOutOrigin = null;
+    if (takeOutOrigin) {
+      if (this.model.tapeBasePositionProperty.value.distance(takeOutOrigin) < this.takeOutClickSlopM) {
+        this.placeTapeAtDefault(); // a click, not a drag
+      }
+      return;
+    }
+    if (
+      this.returnBounds.containsPoint(
+        this.modelViewTransform.modelToViewPosition(this.model.tapeBasePositionProperty.value),
+      )
+    ) {
+      this.putTapeAway();
+    }
+  }
+
+  /** The same, for the ruler. */
+  private endRulerDrag(): void {
+    const takeOutOrigin = this.rulerTakeOutOrigin;
+    this.rulerTakeOutOrigin = null;
+    if (takeOutOrigin) {
+      if (this.model.rulerPositionProperty.value.distance(takeOutOrigin) < this.takeOutClickSlopM) {
+        this.model.rulerPositionProperty.value = RULER_POSITION_DEFAULT;
+      }
+      return;
+    }
     const parent = this.parent;
     if (!parent) {
       return;
@@ -205,7 +333,35 @@ export class ToolboxPanel extends FluidDynamicsPanel {
     // panel, so "dropped on the toolbox" has to mean "overlapping it".
     const rulerViewBounds = parent.globalToLocalBounds(this.rulerNode.globalBounds);
     if (this.returnBounds.intersectsBounds(rulerViewBounds)) {
-      this.model.rulerVisibleProperty.value = false;
+      this.putRulerAway();
+    }
+  }
+
+  /** Where the tape sits when it is placed rather than dragged out. */
+  private placeTapeAtDefault(): void {
+    this.model.tapeBasePositionProperty.value = TAPE_BASE_DEFAULT;
+    this.model.tapeTipPositionProperty.value = TAPE_TIP_DEFAULT;
+  }
+
+  private putTapeAway(): void {
+    this.hideTool(this.model.measuringTapeVisibleProperty, this.measuringTapeNode, this.tapeIconNode);
+  }
+
+  private putRulerAway(): void {
+    this.hideTool(this.model.rulerVisibleProperty, this.rulerNode, this.rulerIconNode);
+  }
+
+  /**
+   * Hides a tool, keeping the keyboard's place. Hiding the node that owns the
+   * focused element leaves focus on the document body — dead arrow keys, and no
+   * way back but Tab from the top — so focus follows the tool home to its icon.
+   */
+  private hideTool(visibleProperty: Property<boolean>, toolNode: Node, iconNode: Node): void {
+    const focus = FocusManager.pdomFocus;
+    const toolHadFocus = focus?.trail.containsNode(toolNode);
+    visibleProperty.value = false;
+    if (toolHadFocus) {
+      iconNode.focus();
     }
   }
 
@@ -225,14 +381,26 @@ export class ToolboxPanel extends FluidDynamicsPanel {
   }
 }
 
-/** A small tape for the toolbox, from the component's own icon factory. */
+/**
+ * A small tape for the toolbox, from the component's own icon factory.
+ *
+ * `tagName: "button"` is load bearing, not cosmetic. The take-out/put-back
+ * gesture is a PressListener, and PressListener reaches the keyboard only
+ * through the PDOM's `click` event — which the browser synthesizes from Enter
+ * and Space for a <button> and never for a focusable <div>. A div here is
+ * focusable, silent about its role, and inert on Enter, which is exactly what
+ * the help text below promises it is not.
+ */
 function createTapeIcon(): Node {
   const a11y = StringManager.getInstance().getFluidA11yStrings();
   return new Node({
     children: [MeasuringTapeNode.createIcon()],
     cursor: "pointer",
-    tagName: "div",
-    focusable: true,
+    tagName: "button",
+    // The icon is where a take-out gesture starts, so its parallel-DOM element
+    // belongs over the icon rather than parked off-screen: an iOS VoiceOver tap
+    // is dispatched at the element's position.
+    positionInPDOM: true,
     accessibleName: a11y.toolboxTapeNameStringProperty,
     accessibleHelpText: a11y.toolboxTapeHelpTextStringProperty,
   });
@@ -255,8 +423,10 @@ function createRulerIcon(): Node {
       new Path(ticks, { stroke: "black", lineWidth: 1 }),
     ],
     cursor: "pointer",
-    tagName: "div",
-    focusable: true,
+    // A <button>, and positioned in the PDOM, for the same reasons as the tape
+    // icon above.
+    tagName: "button",
+    positionInPDOM: true,
     accessibleName: a11y.toolboxRulerNameStringProperty,
     accessibleHelpText: a11y.toolboxRulerHelpTextStringProperty,
   });

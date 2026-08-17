@@ -84,6 +84,16 @@ the device is lost the moment any canvas is presented, with or without compute.
 Compute and offscreen rendering work fine. `tests/fuzz/engine.spec.ts` therefore
 runs the engine with `presentToCanvas: false` and reads pixels back.
 
+**A toolbox icon's `PressListener` must be `attach: false`.** The take-out
+gesture forwards the icon's live press to the tool's own drag listener
+(`MeasuringTapeNode.startBaseDrag()` / `FluidRulerNode.startDrag()`), but
+`PressListener` attaches itself to the pointer *before* it calls the press
+callback, and no listener will press a pointer another has attached. An
+attaching icon listener therefore turns the hand-off into a silent no-op: the
+tool appears at the pointer, correctly positioned, and then never moves. Nothing
+throws and nothing logs — `tests/fuzz/toolbox.spec.ts` exists because a test
+that only checked whether the tool became visible passed the whole time.
+
 **Vorticity confinement is scaled by how much of the damping is numerical.**
 Removing that scaling makes low-Reynolds-number wakes shed vortices they should
 not. See `shaders/vorticity.wgsl` and `doc/model.md`.
@@ -136,6 +146,7 @@ Fleet-standard Vitest layout under root `tests/`, plus a Playwright suite:
 | `tests/memory-leak.test.ts` | WeakRef dispose regression (both models) |
 | `tests/harness/engine.html` | Page that loads the real engine for the test below |
 | `tests/fuzz/engine.spec.ts` | **The solver**, in a real browser, verified by pixel readback |
+| `tests/fuzz/toolbox.spec.ts` | Take-out drag, drop-to-return, click-to-park — needs no WebGPU |
 | `tests/fuzz/fuzz.spec.ts` | joist `?fuzz` smoke |
 
 `engine.spec.ts` needs a WebGPU adapter and skips without one; it takes several

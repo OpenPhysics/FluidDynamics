@@ -330,6 +330,25 @@ Ending a tool drag over the panel also puts it back. A one-shot flag per tool
 swallows the return test of the drag that took it out, which always ends over
 the toolbox.
 
+**The icons' `PressListener`s must be `attach: false`.** A `PressListener`
+attaches itself to the pointer *before* it calls the press callback, and
+`PressListener.canPress()` refuses a pointer another listener has attached — so
+an attaching icon listener makes `startBaseDrag()`/`startDrag()` no-ops and the
+tool is simply placed, never dragged. Nothing throws, nothing logs; the sim just
+feels broken. Both hand-off calls now report whether the tool took the press,
+and the panel falls back to placing the tool at its default position if it did
+not.
+
+Two consequences of forwarding shape the rest: the drag keeps the offset the
+take-out established (so the take-out offsets are small, and the tool comes out
+under the hand), and the take-out drag necessarily ends over the toolbox (so the
+one-shot flag above exists). That flag doubles as a click-versus-drag test — a
+press that never travels `TOOL_TAKEOUT_CLICK_SLOP_PX` parks the tool at its
+default position out in the channel rather than leaving it draped over the
+toolbox. Only the tape's *base* can put the tape away: the tip is how a learner
+reaches out to what they are measuring, and things worth measuring can sit over
+the toolbox.
+
 Tool state lives in `FluidModel` (visibility + positions in metres), so Reset
 All empties the toolbox with no view-side reset code. The ruler's length and
 tick spacing are computed from the shared `modelViewTransform`, so its scale

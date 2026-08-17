@@ -433,6 +433,13 @@ export const TAPE_BASE_DEFAULT = new Vector2(0.5, 0.35);
 export const TAPE_TIP_DEFAULT = new Vector2(1.1, 0.55);
 
 /**
+ * How far the tip sits from the base when the tape is dragged out, in metres.
+ * Shorter than the default span above, because the take-out drag carries the
+ * whole tape and a long tail would sweep across the controls on the way out.
+ */
+export const TAPE_TAKEOUT_SPAN_M = new Vector2(0.55, 0.3);
+
+/**
  * Where the ruler's centre sits when it is first taken out or Reset All runs,
  * in metres. Near the top of the channel: the interesting lengths to measure —
  * the body and its wake — live in and below the middle, so the ruler starts
@@ -472,12 +479,30 @@ export const TOOL_DRAG_MARGIN_M = 0.06;
 export const TOOLBOX_RETURN_TOLERANCE_PX = 10;
 
 /**
- * Where the tape appears relative to the pointer that took it out, in screen
- * pixels (negative y is up). Keeps the tape's base and its readout clear of
- * the toolbox icon, so a second press on the icon — the put-back path —
- * reaches the icon instead of the freshly spawned tape.
+ * Where the tape's base lands relative to the pointer that took it out, in
+ * screen pixels (positive y is down). The base image's lower-right corner sits
+ * at the base point, so a small offset down and to the right leaves the pointer
+ * inside the tape's body. Small is the point: the drag that follows a take-out
+ * keeps whatever offset the take-out established, so a large one leaves the
+ * tape floating a hand's width from the cursor for the whole gesture.
  */
-export const TAPE_TAKEOUT_OFFSET_PX = new Vector2(30, -60);
+export const TAPE_TAKEOUT_OFFSET_PX = new Vector2(12, 12);
+
+/**
+ * Where the pointer grabs the ruler when it is taken out, as a fraction of the
+ * ruler's width and height measured from its top-left corner. A quarter in from
+ * the left end and a quarter up from the bottom edge is on the ruler's body but
+ * far enough along it that the ruler does not spawn centred on the toolbox.
+ */
+export const RULER_TAKEOUT_GRAB_FRACTION = new Vector2(0.25, 0.75);
+
+/**
+ * How far a take-out press must travel before it counts as a drag rather than a
+ * click, in screen pixels. A press that never travels that far is a click, and
+ * a click leaves the tool at its default position out in the channel instead of
+ * draped over the toolbox it was just pulled from.
+ */
+export const TOOL_TAKEOUT_CLICK_SLOP_PX = 6;
 
 /** Horizontal gap between the toolbox's icons, in screen pixels. */
 export const TOOLBOX_ICON_SPACING = 12;
@@ -575,6 +600,7 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   TRACER_WORKGROUP_SIZE,
   TAPE_BASE_DEFAULT,
   TAPE_TIP_DEFAULT,
+  TAPE_TAKEOUT_SPAN_M,
   RULER_POSITION_DEFAULT,
   RULER_LENGTH_M,
   RULER_MAJOR_TICK_M,
