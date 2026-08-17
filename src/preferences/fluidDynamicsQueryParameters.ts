@@ -72,7 +72,7 @@ const fluidDynamicsQueryParameters = QueryStringMachine.getAll({
   },
 
   /**
-   * Jacobi iterations in the pressure projection, overriding both the default
+   * Red-black SOR sweeps in the pressure projection, overriding both the default
    * and the quality preference. A development escape hatch for measuring how
    * much the projection actually costs, not something to put in a shared link —
    * hence not `public`.

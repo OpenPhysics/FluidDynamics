@@ -13,10 +13,13 @@
  *   correct) → diffuse (viscosity, red-black SOR ×N) → curl → vorticity
  *   confinement → forces & boundaries → divergence → pressure (red-black SOR ×N)
  *   → subtract pressure gradient → inject dye → advect dye (MacCormack) →
- *   display
+ *   [advect tracer dots, if shown] → display [→ draw tracer dots]
  *
  * Every compute dispatch above is recorded into a single compute pass on a
  * single command encoder, with one queue submission per frame.
+ *
+ * A paused frame identical to the one before it skips the whole compute pass and
+ * records only the display — see the idle guard in step().
  *
  * Two of those counts are not fixed. The pressure sweeps come from the learner's
  * accuracy preference. The diffusion sweeps are derived per step from the
@@ -53,6 +56,13 @@ import {
   DISPLAY_CANVAS_HEIGHT,
   DISPLAY_CANVAS_WIDTH,
   PRESSURE_ITERATIONS_HIGH,
+  TRACER_EXIT_MARGIN_M,
+  TRACER_FADE_IN_SECONDS,
+  TRACER_INLET_X_M,
+  TRACER_LANE_COUNT,
+  TRACER_RADIUS_M,
+  TRACER_TOTAL_COUNT,
+  TRACER_WORKGROUP_SIZE,
 } from "../../FluidDynamicsConstants.js";
 import {
   BIND_LAYOUTS,
@@ -64,7 +74,7 @@ import {
   VELOCITY_FORMAT,
 } from "./bindLayouts.js";
 import type { FluidGridSpec } from "./FluidGridSpec.js";
-import { FluidUniforms, type FluidUniformValues, UNIFORM_BUFFER_SIZE } from "./FluidUniforms.js";
+import { FluidUniforms, type FluidUniformValues, UNIFORM_BUFFER_SIZE, UNIFORM_FLOAT_COUNT } from "./FluidUniforms.js";
 import { advanceInflowRamp, type InflowRampState, isInflowSettling } from "./inflowRamp.js";
 import advectWGSL from "./shaders/advect.wgsl?raw";
 import commonWGSL from "./shaders/common.wgsl?raw";
@@ -77,12 +87,26 @@ import forcesWGSL from "./shaders/forces.wgsl?raw";
 import gradientSubtractWGSL from "./shaders/gradientSubtract.wgsl?raw";
 import maskWGSL from "./shaders/mask.wgsl?raw";
 import pressureWGSL from "./shaders/pressure.wgsl?raw";
+import tracerDrawWGSL from "./shaders/tracerDraw.wgsl?raw";
+import tracerStepWGSL from "./shaders/tracerStep.wgsl?raw";
 import vorticityWGSL from "./shaders/vorticity.wgsl?raw";
 import { diffusionAlpha, diffusionSweeps } from "./solverSchedule.js";
+import {
+  advanceTracerRelease,
+  initialTracerRelease,
+  NO_TRACER_RELEASE,
+  type TracerReleaseState,
+} from "./tracerSchedule.js";
 
 /** Everything step() needs that is not derived from the grid. */
-export type FluidStepValues = Omit<FluidUniformValues, "domainWidth" | "domainHeight" | "dt"> & {
+export type FluidStepValues = Omit<FluidUniformValues, "domainWidth" | "domainHeight" | "dt" | "tracerEmitBatch"> & {
   readonly pressureIterations: number;
+  /**
+   * Whether the tracer dots are shown. Not a uniform: it gates the advection
+   * dispatch and the draw call on the CPU, and which column is released — the
+   * part the shader does need to know — is the engine's own business.
+   */
+  readonly tracersVisible: boolean;
 };
 
 /** A field that must be read and written in the same pass, so it exists twice. */
@@ -148,6 +172,16 @@ export class WebGPUFluidEngine {
   /** Reports a device or validation error, so the view can show the fallback. */
   private readonly onFailure: () => void;
 
+  /**
+   * The uncaptured-error handler, kept so dispose() can detach it.
+   *
+   * The device is a process-wide singleton shared by every screen (see
+   * webgpuSupport.ts) and outlives any one engine, so a handler left attached
+   * keeps this engine — and everything it closes over — alive for the life of
+   * the page.
+   */
+  private readonly errorListener: (event: Event) => void;
+
   private grid: FluidGridSpec;
 
   // Fields. Recreated whenever the grid resolution changes.
@@ -176,6 +210,17 @@ export class WebGPUFluidEngine {
    */
   private obstacle!: GPUTexture;
   private obstacleView!: GPUTextureView;
+
+  /**
+   * The tracer dots: one vec4 per particle, advected in place by
+   * tracerStep.wgsl and read for its positions by tracerDraw.wgsl. Never read
+   * back to the CPU — a readback would stall the pipeline every frame, and
+   * nothing on this side needs to know where a dot is.
+   *
+   * A newly created buffer reads as zero, which is a full set of parked
+   * particles, so an empty channel needs no initialization pass.
+   */
+  private tracers!: GPUBuffer;
 
   /**
    * Set whenever the baked obstacle field no longer matches the parameters, so
@@ -222,6 +267,30 @@ export class WebGPUFluidEngine {
    */
   private inflowRamp: InflowRampState | null = null;
 
+  /** How far the stream has carried since the last column of dots was released. */
+  private tracerRelease: TracerReleaseState = initialTracerRelease();
+
+  /**
+   * Whether the previous frame drew the dots, so that switching them on starts
+   * from an empty channel rather than resuming a pattern frozen mid-flight.
+   */
+  private wereTracersVisible = false;
+
+  /**
+   * The uniforms the previous frame ran with, so a paused frame can tell that
+   * nothing has changed and skip the solver. See the idle guard in step().
+   */
+  private readonly lastPacked = new Float32Array(UNIFORM_FLOAT_COUNT);
+
+  /**
+   * Whether lastPacked describes a frame that actually ran against the *current*
+   * textures. Cleared by reset() and setGrid(), which replace the fields with
+   * zeroed ones: the uniforms are unchanged across a reset, so without this the
+   * first frame after one would match the last frame before it and idle, leaving
+   * the learner looking at an empty channel with no dye at the inlet.
+   */
+  private hasStepped = false;
+
   private isDisposed = false;
   private hasFailed = false;
 
@@ -241,9 +310,10 @@ export class WebGPUFluidEngine {
 
     // Registered before any resource is created, so validation errors raised
     // during pipeline construction are caught too.
-    device.addEventListener("uncapturederror", (event) => {
+    this.errorListener = (event: Event): void => {
       this.reportError(event as GPUUncapturedErrorEvent);
-    });
+    };
+    device.addEventListener("uncapturederror", this.errorListener);
 
     canvas.width = DISPLAY_CANVAS_WIDTH;
     canvas.height = DISPLAY_CANVAS_HEIGHT;
@@ -251,6 +321,9 @@ export class WebGPUFluidEngine {
     const context = canvas.getContext("webgpu");
     if (context === null) {
       this.hasFailed = true;
+      // dispose() will never run on a constructor that throws, so the handler
+      // registered above has to come back off the shared device here.
+      device.removeEventListener("uncapturederror", this.errorListener);
       onFailure();
       throw new Error("canvas does not support a webgpu context");
     }
@@ -337,20 +410,26 @@ export class WebGPUFluidEngine {
         ? Math.max(values.pressureIterations, PRESSURE_ITERATIONS_HIGH)
         : values.pressureIterations;
 
-    this.device.queue.writeBuffer(
-      this.uniformBuffer,
-      0,
-      this.uniforms.pack(
-        {
-          ...values,
-          dt,
-          inflowSpeed: this.inflowRamp.applied,
-          domainWidth: CHANNEL_WIDTH_M,
-          domainHeight: CHANNEL_HEIGHT_M,
-        },
-        this.grid,
-      ),
+    // Releasing is clocked by the speed the boundary is actually applying, not
+    // the one the slider asks for, so the columns stay evenly spaced through a
+    // ramp as well as after it.
+    this.advanceTracers(values.tracersVisible, dt, this.inflowRamp.applied);
+
+    const packed = this.uniforms.pack(
+      {
+        ...values,
+        dt,
+        inflowSpeed: this.inflowRamp.applied,
+        domainWidth: CHANNEL_WIDTH_M,
+        domainHeight: CHANNEL_HEIGHT_M,
+        tracerEmitBatch: this.tracerRelease.emitBatch,
+      },
+      this.grid,
     );
+    const isRepeatOfLastFrame = this.hasStepped && floatsEqual(packed, this.lastPacked);
+    this.lastPacked.set(packed);
+    this.hasStepped = true;
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, packed);
 
     const encoder = this.device.createCommandEncoder({ label: "fluid-frame" });
     // How stiff the viscous solve is this step decides how many sweeps it gets;
@@ -358,8 +437,25 @@ export class WebGPUFluidEngine {
     // seeding dispatch is needed.
     const sweeps = diffusionSweeps(diffusionAlpha(values.viscosity, dt, this.grid.cellSize));
     this.markMask(values);
-    this.recordCompute(encoder, pressureIterations, sweeps);
-    this.recordDisplay(encoder);
+
+    // A paused frame whose every input matches the frame before it cannot change
+    // the fluid, so it gets the display pass alone. The paused path still has to
+    // re-render every frame — switching visualization or dragging the body must
+    // update the picture — but re-running the solver for it costs a full frame's
+    // ~40 dispatches, thirty of them the pressure solve, at up to 2048 × 1024.
+    //
+    // The guard has to be this strict. Skipping only the projection would leave
+    // gradientSubtract subtracting a stale pressure gradient from an
+    // already-projected field, every frame; and the solver still has real work
+    // at dt = 0 whenever an input *did* change — forces re-imposes the boundary
+    // and zeroes the cells a dragged body just covered, and dye.wgsl paints
+    // under the pointer. Comparing the packed uniforms catches all of those,
+    // because every one of them is a uniform.
+    const isIdle = dt <= 0 && isRepeatOfLastFrame && !this.isMaskStale;
+    if (!isIdle) {
+      this.recordCompute(encoder, pressureIterations, sweeps, values.tracersVisible);
+    }
+    this.recordDisplay(encoder, values.tracersVisible);
     if (this.presentToCanvas) {
       encoder.copyTextureToTexture({ texture: this.displayTexture }, { texture: this.context.getCurrentTexture() }, [
         DISPLAY_CANVAS_WIDTH,
@@ -467,6 +563,8 @@ export class WebGPUFluidEngine {
     this.destroyFields();
     this.createFields();
     this.inflowRamp = null;
+    this.tracerRelease = initialTracerRelease();
+    this.hasStepped = false;
   }
 
   /** Switches the solver to a different grid, discarding the current state. */
@@ -478,6 +576,8 @@ export class WebGPUFluidEngine {
     this.grid = grid;
     this.createFields();
     this.inflowRamp = null;
+    this.tracerRelease = initialTracerRelease();
+    this.hasStepped = false;
   }
 
   public dispose(): void {
@@ -485,6 +585,7 @@ export class WebGPUFluidEngine {
       return;
     }
     this.isDisposed = true;
+    this.device.removeEventListener("uncapturederror", this.errorListener);
     this.destroyFields();
     this.displayTexture.destroy();
     this.readbackBuffer?.destroy();
@@ -523,7 +624,34 @@ export class WebGPUFluidEngine {
     }
   }
 
-  private recordCompute(encoder: GPUCommandEncoder, pressureIterations: number, viscousSweeps: number): void {
+  /**
+   * Moves the tracer release clock on by one step, and empties the buffer when
+   * the dots are switched on.
+   *
+   * Clearing on the way in rather than on the way out means the parked dots of
+   * the last run cannot reappear mid-channel: the learner gets a channel that
+   * fills from the inlet, which is the picture the control promises.
+   */
+  private advanceTracers(visible: boolean, dt: number, inflowSpeed: number): void {
+    if (visible !== this.wereTracersVisible) {
+      this.wereTracersVisible = visible;
+      this.tracerRelease = initialTracerRelease();
+      if (visible) {
+        this.device.queue.writeBuffer(this.tracers, 0, new Float32Array(TRACER_TOTAL_COUNT * 4));
+      }
+    }
+
+    this.tracerRelease = visible
+      ? advanceTracerRelease(this.tracerRelease, inflowSpeed, dt)
+      : { ...this.tracerRelease, emitBatch: NO_TRACER_RELEASE };
+  }
+
+  private recordCompute(
+    encoder: GPUCommandEncoder,
+    pressureIterations: number,
+    viscousSweeps: number,
+    tracersVisible: boolean,
+  ): void {
     const pass = encoder.beginComputePass({ label: "fluid-solver" });
     const x = this.grid.dispatchX;
     const y = this.grid.dispatchY;
@@ -593,10 +721,20 @@ export class WebGPUFluidEngine {
     dispatch(this.pipelines.advectDyeCorrect, bg.advectDyeCorrect[this.velocity.parity][this.dye.parity]);
     this.dye.swap();
 
+    // 12. Carry the tracer dots along the velocity this step finished with, and
+    //     release the column the clock asked for. Last, so the dots see the
+    //     same divergence-free field the dye was just advected by — and one
+    //     dispatch over a few hundred particles either way.
+    if (tracersVisible) {
+      pass.setPipeline(this.pipelines.tracerStep);
+      pass.setBindGroup(0, bg.tracerStep[this.velocity.parity]);
+      pass.dispatchWorkgroups(Math.ceil(TRACER_TOTAL_COUNT / TRACER_WORKGROUP_SIZE));
+    }
+
     pass.end();
   }
 
-  private recordDisplay(encoder: GPUCommandEncoder): void {
+  private recordDisplay(encoder: GPUCommandEncoder, tracersVisible: boolean): void {
     const pass = encoder.beginRenderPass({
       label: "fluid-display",
       colorAttachments: [
@@ -611,6 +749,17 @@ export class WebGPUFluidEngine {
     pass.setPipeline(this.pipelines.display);
     pass.setBindGroup(0, this.bindGroups.display[this.dye.parity][this.velocity.parity][this.pressure.parity]);
     pass.draw(3);
+
+    // Over the field, in the same pass: the dots mark fluid parcels, so they
+    // belong on top of whichever field is being shown. Parked particles are
+    // still drawn — nothing on this side knows which those are — and collapse
+    // to nothing in the vertex shader.
+    if (tracersVisible) {
+      pass.setPipeline(this.pipelines.tracerDots);
+      pass.setBindGroup(0, this.bindGroups.tracerDraw);
+      pass.draw(6, TRACER_TOTAL_COUNT);
+    }
+
     pass.end();
   }
 
@@ -677,6 +826,16 @@ export class WebGPUFluidEngine {
     });
     this.curlView = this.curl.createView();
 
+    // Grid-independent — the dots live in metres, not cells — but created and
+    // destroyed with the fields so that reset() and a resolution change clear
+    // them along with everything else.
+    this.tracers = device.createBuffer({
+      label: "tracers",
+      // vec4<f32> per particle: position in metres, age in seconds, alive flag.
+      size: TRACER_TOTAL_COUNT * 4 * Float32Array.BYTES_PER_ELEMENT,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
     this.bindGroups = this.createBindGroups();
   }
 
@@ -690,6 +849,7 @@ export class WebGPUFluidEngine {
     this.obstacle.destroy();
     this.divergence.destroy();
     this.curl.destroy();
+    this.tracers.destroy();
   }
 
   private createBindGroups(): BindGroups {
@@ -873,6 +1033,18 @@ export class WebGPUFluidEngine {
           ),
         ),
       ),
+
+      tracerStep: perParity((v) =>
+        group(layouts.tracerStep, [
+          uniform,
+          sampler,
+          { binding: 2, resource: velocityViews[v] },
+          { binding: 3, resource: { buffer: this.tracers } },
+          obstacle,
+        ]),
+      ),
+
+      tracerDraw: group(layouts.tracerDraw, [uniform, { binding: 1, resource: { buffer: this.tracers } }]),
     };
   }
 
@@ -915,6 +1087,8 @@ type Pipelines = {
   readonly gradientSubtract: GPUComputePipeline;
   readonly injectDye: GPUComputePipeline;
   readonly display: GPURenderPipeline;
+  readonly tracerStep: GPUComputePipeline;
+  readonly tracerDots: GPURenderPipeline;
 };
 
 type BindGroups = {
@@ -936,6 +1110,8 @@ type BindGroups = {
     [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]],
     [[GPUBindGroup, GPUBindGroup], [GPUBindGroup, GPUBindGroup]],
   ];
+  readonly tracerStep: [GPUBindGroup, GPUBindGroup];
+  readonly tracerDraw: GPUBindGroup;
 };
 
 /** The half of a layout entry that says what kind of resource is bound. */
@@ -949,12 +1125,26 @@ function layoutResource(binding: BindingSpec): Omit<GPUBindGroupLayoutEntry, "bi
   if (binding.kind === "texture") {
     return { texture: { sampleType: binding.sampleType } };
   }
+  if (binding.kind === "storageBuffer") {
+    return { buffer: { type: binding.access === "read-write" ? "storage" : "read-only-storage" } };
+  }
   return { storageTexture: { access: "write-only", format: binding.format } };
+}
+
+/** Which shader stages a layout's entries are visible from. */
+function layoutVisibility(stage: BindLayoutSpec["stage"]): number {
+  if (stage === "compute") {
+    return GPUShaderStage.COMPUTE;
+  }
+  if (stage === "vertexFragment") {
+    return GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+  }
+  return GPUShaderStage.FRAGMENT;
 }
 
 /** Turns one of the plain-data layout specs in bindLayouts.ts into a real one. */
 function createLayout(device: GPUDevice, spec: BindLayoutSpec): GPUBindGroupLayout {
-  const visibility = spec.stage === "compute" ? GPUShaderStage.COMPUTE : GPUShaderStage.FRAGMENT;
+  const visibility = layoutVisibility(spec.stage);
 
   return device.createBindGroupLayout({
     label: spec.label,
@@ -991,6 +1181,7 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
   const diffuseLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts.twoInRGBA] });
 
   const displayModule = module("display", displayWGSL);
+  const tracerModule = module("tracer-draw", tracerDrawWGSL);
 
   return {
     layouts,
@@ -1057,7 +1248,67 @@ function createPipelines(device: GPUDevice, canvasFormat: GPUTextureFormat): Pip
       },
       primitive: { topology: "triangle-list" },
     }),
+    tracerStep: device.createComputePipeline({
+      label: "tracer-step",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.tracerStep] }),
+      compute: {
+        module: module("tracer-step", tracerStepWGSL),
+        entryPoint: "main",
+        // Pipeline-overridable constants rather than literals in the WGSL, so
+        // the rake's geometry has one definition and it is the one the release
+        // clock and the model are written against.
+        constants: {
+          laneCount: TRACER_LANE_COUNT,
+          inletX: TRACER_INLET_X_M,
+          exitMargin: TRACER_EXIT_MARGIN_M,
+        },
+      },
+    }),
+    tracerDots: device.createRenderPipeline({
+      label: "tracer-dots",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.tracerDraw] }),
+      vertex: {
+        module: tracerModule,
+        entryPoint: "vs",
+        constants: { dotRadius: TRACER_RADIUS_M, fadeInSeconds: TRACER_FADE_IN_SECONDS },
+      },
+      fragment: {
+        module: tracerModule,
+        entryPoint: "fs",
+        constants: { dotRadius: TRACER_RADIUS_M, fadeInSeconds: TRACER_FADE_IN_SECONDS },
+        targets: [
+          {
+            format: canvasFormat,
+            // Straight alpha blending, so the antialiased rim of a dot melts
+            // into the field instead of cutting a hard square out of it. The
+            // target's own alpha is left at 1: the canvas is opaque, and a dot
+            // that punched a hole in it would show the page through the field.
+            blend: {
+              color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+              alpha: { srcFactor: "zero", dstFactor: "one", operation: "add" },
+            },
+          },
+        ],
+      },
+      primitive: { topology: "triangle-list" },
+    }),
   };
+}
+
+/**
+ * Element-wise equality of two same-length uniform buffers.
+ *
+ * Exact comparison is what is wanted here: these are the same values packed by
+ * the same code from the same Properties, so anything that moved at all moved
+ * because the learner moved it.
+ */
+function floatsEqual(a: Float32Array, b: Float32Array): boolean {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Decodes one IEEE 754 half-precision float, as stored in rgba16float textures. */

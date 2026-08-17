@@ -39,12 +39,18 @@ export type BindingSpec =
   | { readonly kind: "uniform" }
   | { readonly kind: "sampler" }
   | { readonly kind: "texture"; readonly sampleType: "float" | "unfilterable-float" }
-  | { readonly kind: "storageTexture"; readonly format: GPUTextureFormat };
+  | { readonly kind: "storageTexture"; readonly format: GPUTextureFormat }
+  | { readonly kind: "storageBuffer"; readonly access: "read-only" | "read-write" };
 
 export type BindLayoutSpec = {
   readonly label: string;
-  /** Which shader stage the layout's entries are visible to. */
-  readonly stage: "compute" | "fragment";
+  /**
+   * Which shader stages the layout's entries are visible to. "vertexFragment"
+   * is for the tracer draw pass, whose vertex stage reads the particle buffer
+   * and whose fragment stage reads nothing — the uniform is declared once for
+   * the module, so both stages have to be able to see it.
+   */
+  readonly stage: "compute" | "fragment" | "vertexFragment";
   readonly bindings: Readonly<Record<number, BindingSpec>>;
 };
 
@@ -62,6 +68,15 @@ const unfilterable: BindingSpec = { kind: "texture", sampleType: "unfilterable-f
 
 const velocityOut: BindingSpec = { kind: "storageTexture", format: VELOCITY_FORMAT };
 const scalarOut: BindingSpec = { kind: "storageTexture", format: SCALAR_FORMAT };
+
+/**
+ * The tracer particle buffer, in the two roles it plays: advected in place by
+ * the compute pass, then read for its positions by the draw pass. Writable
+ * storage is not allowed in a vertex shader, which is the other reason the two
+ * passes cannot share one layout.
+ */
+const tracersInOut: BindingSpec = { kind: "storageBuffer", access: "read-write" };
+const tracersIn: BindingSpec = { kind: "storageBuffer", access: "read-only" };
 
 export const BIND_LAYOUTS = {
   /** Bakes the obstacle SDF. The one kernel that does not read the result. */
@@ -125,6 +140,20 @@ export const BIND_LAYOUTS = {
     stage: "fragment",
     bindings: { 0: uniform, 1: sampler, 2: filterable, 3: filterable, 4: unfilterable, 5: unfilterable },
   },
+
+  /** Carries the tracer dots along the finished velocity field. */
+  tracerStep: {
+    label: "tracer-step",
+    stage: "compute",
+    bindings: { 0: uniform, 1: sampler, 2: filterable, 3: tracersInOut, [OBSTACLE_BINDING]: unfilterable },
+  },
+
+  /** Draws them, straight out of the same buffer. */
+  tracerDraw: {
+    label: "tracer-draw",
+    stage: "vertexFragment",
+    bindings: { 0: uniform, 1: tracersIn },
+  },
 } as const satisfies Record<string, BindLayoutSpec>;
 
 export type BindLayoutName = keyof typeof BIND_LAYOUTS;
@@ -159,4 +188,6 @@ export const SHADER_LAYOUTS = {
   "gradientSubtract.wgsl": "mixedRGBA",
   "dye.wgsl": "oneInRGBA",
   "display.wgsl": "display",
+  "tracerStep.wgsl": "tracerStep",
+  "tracerDraw.wgsl": "tracerDraw",
 } as const satisfies Record<string, BindLayoutName>;

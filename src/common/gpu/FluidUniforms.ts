@@ -23,13 +23,13 @@
  *   byte 64   pointerPos     vec2
  *   byte 72   pointerDelta   vec2
  *   byte 80   dt             f32   (align 4)
- *   …         fourteen more f32, the last of which is `time`
- *   byte 140  — the members end; the struct's alignment rounds it up to 144
+ *   …         fifteen more f32, the last of which is `tracerEmitBatch`
  *   byte 144  end            — a multiple of 16, as the struct's alignment requires
  *
- * That final 4 bytes of round-up is why the buffer is 144 bytes while the
- * members stop at 140: it must be at least the struct's rounded size, and it
- * must itself be a multiple of 16. The floats past `time` are never written.
+ * The members happen to fill the buffer exactly. They need not: the size only
+ * has to be at least the struct's own rounded-up size and itself a multiple of
+ * 16, so a member added here may leave a few unwritten bytes of round-up at the
+ * end, as one did before `tracerEmitBatch` closed the gap.
  */
 
 import type { FluidGridSpec } from "./FluidGridSpec.js";
@@ -70,6 +70,7 @@ export const UNIFORM_OFFSETS = {
   pointerRadius: 32,
   velocityScale: 33,
   time: 34,
+  tracerEmitBatch: 35,
 } as const;
 
 /** Everything the shaders need to know about one simulation step. */
@@ -103,6 +104,12 @@ export type FluidUniformValues = {
   readonly velocityScale: number;
   /** Elapsed simulation time in seconds; seeds the inflow perturbation. */
   readonly time: number;
+  /**
+   * Column of tracer dots released at the inlet this step, or NO_TRACER_RELEASE.
+   * Owned by the engine's release clock rather than by the view — see
+   * tracerSchedule.ts.
+   */
+  readonly tracerEmitBatch: number;
 };
 
 /**
@@ -165,6 +172,7 @@ export class FluidUniforms {
     d[o.pointerRadius] = values.pointerRadius;
     d[o.velocityScale] = values.velocityScale;
     d[o.time] = values.time;
+    d[o.tracerEmitBatch] = values.tracerEmitBatch;
 
     return d;
   }

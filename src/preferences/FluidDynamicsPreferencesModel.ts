@@ -18,9 +18,9 @@ export class FluidDynamicsPreferencesModel {
    * Whether to run the higher-accuracy pressure solve.
    *
    * This is a cost/quality trade rather than a physics control, which is why it
-   * lives in Preferences and not on the Lab screen: more Jacobi iterations leave
-   * less residual divergence — dye holds its shape longer instead of slowly
-   * thinning — at a proportional cost in GPU time each frame. On a slower
+   * lives in Preferences and not on the Lab screen: more red-black SOR sweeps
+   * leave less residual divergence — dye holds its shape longer instead of
+   * slowly thinning — at a proportional cost in GPU time each frame. On a slower
    * machine, leaving it off is the difference between 60 and 30 fps.
    */
   public readonly highQualitySolverProperty: BooleanProperty;

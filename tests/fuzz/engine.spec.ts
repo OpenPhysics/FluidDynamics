@@ -66,7 +66,39 @@ class Frame {
     }
     return total / samples;
   }
+
+  /**
+   * Pixels brighter than a threshold, optionally only where `region` says.
+   *
+   * How the tracer dots are found: their core is near-white, well above
+   * anything the dye colours, the colour ramps or the obstacle's rim reach, so
+   * counting bright pixels over a region answers "is there a dot here?" without
+   * having to guess exactly where one landed.
+   */
+  public countBrighterThan(threshold: number, region?: (u: number, v: number) => boolean): number {
+    let count = 0;
+    for (let y = 0; y < HEIGHT; y++) {
+      // Row 0 of the readback is the top of the image, which is v = 1.
+      const v = 1 - y / (HEIGHT - 1);
+      for (let x = 0; x < WIDTH; x++) {
+        const i = (y * WIDTH + x) * 4;
+        const total = (this.bytes[i] ?? 0) + (this.bytes[i + 1] ?? 0) + (this.bytes[i + 2] ?? 0);
+        if (total / 3 > threshold && (region === undefined || region(x / (WIDTH - 1), v))) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
 }
+
+/**
+ * Brightness no field, ramp or obstacle rim reaches, but the white core of a
+ * tracer dot passes comfortably. The brightest thing otherwise on screen is the
+ * top of the sequential speed ramp; the dye view, used by the tracer tests, is
+ * far below it.
+ */
+const TRACER_BRIGHTNESS = 230;
 
 type Harness = {
   start: (resolution?: string) => Promise<{ ok: boolean; reason?: string; format?: string }>;
@@ -600,5 +632,69 @@ test.describe("WebGPU fluid engine", () => {
     const afterResume = stats(await sampleVelocity());
     expect(afterResume.nonFinite, "the field is still finite a second after resuming").toBe(0);
     expect(afterResume.maxSpeed, "no lingering explosion after resuming").toBeLessThan(5);
+  });
+
+  test("tracer dots are released at the inlet and carried out of the channel", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // Nothing in the dye view is this bright on its own, so any bright pixel is
+    // a dot. Checked first, because the rest of the test rests on it.
+    const withoutDots = await render(page, format, 120, { inflowSpeed: 1, obstacleShape: 0 });
+    expect(withoutDots.countBrighterThan(TRACER_BRIGHTNESS), "the field alone has no near-white pixels").toBe(0);
+
+    const upstream = (u: number): boolean => u < 0.3;
+    const downstream = (u: number): boolean => u > 0.6;
+
+    // Half a second in, the columns released so far are still in the upstream
+    // end: dots exist, and none has teleported downstream.
+    await page.evaluate(() => window.harness.reset());
+    const early = await render(page, format, 30, { inflowSpeed: 1, obstacleShape: 0, tracersVisible: true });
+    expect(early.countBrighterThan(TRACER_BRIGHTNESS, upstream), "dots near the inlet").toBeGreaterThan(0);
+    expect(early.countBrighterThan(TRACER_BRIGHTNESS, downstream), "nothing downstream yet").toBe(0);
+
+    // Four seconds at 1 m/s is two channel widths, so the first columns have
+    // left and later ones are spread across the whole channel.
+    const later = await render(page, format, 210, { inflowSpeed: 1, obstacleShape: 0, tracersVisible: true });
+    expect(later.countBrighterThan(TRACER_BRIGHTNESS, downstream), "dots have reached the far end").toBeGreaterThan(0);
+    expect(later.countBrighterThan(TRACER_BRIGHTNESS, upstream), "and the inlet is still releasing").toBeGreaterThan(0);
+  });
+
+  test("tracer dots are never drawn on the obstacle", async ({ page }) => {
+    const format = await startEngine(page);
+    test.skip(format === null, "no WebGPU adapter available");
+    if (format === null) {
+      return;
+    }
+
+    // A dot that reaches the body is retired rather than advected into it: the
+    // velocity inside a solid cell is zero, so a dot that got in would stall
+    // there in plain sight, on top of a body it is supposed to be flowing past.
+    const radius = 0.075;
+    const frame = await render(page, format, 480, {
+      inflowSpeed: 1,
+      obstacleShape: 1,
+      obstacleRadius: radius,
+      tracersVisible: true,
+    });
+
+    // Tested as the disc it is rather than as a bounding box: the corners of a
+    // box around the cylinder are outside it, and dots stream through them.
+    //
+    // The margin is TRACER_RADIUS_M (0.008 m) plus one cell of the standard
+    // 256-wide grid (0.0078 m), because a dot resting *against* the body is
+    // legitimate: the baked mask that retires it resolves the surface to a
+    // cell, and the dot is drawn as a disc around its centre. Anything deeper
+    // than that got inside and stalled. Written out rather than imported —
+    // this suite runs under Playwright's own transpile and does not pull in
+    // the sim's modules.
+    const margin = 0.008 + 2 / 256;
+    const insideBody = (u: number, v: number): boolean => Math.hypot(u * 2 - 0.5, v - 0.5) < radius - margin;
+
+    expect(frame.countBrighterThan(TRACER_BRIGHTNESS), "dots are on screen at all").toBeGreaterThan(0);
+    expect(frame.countBrighterThan(TRACER_BRIGHTNESS, insideBody), "no dot inside the body").toBe(0);
   });
 });

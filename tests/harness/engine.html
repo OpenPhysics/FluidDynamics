@@ -37,12 +37,21 @@
         obstacleRadius: 0.075,
         obstacleShape: 1,
         obstacleAngle: 8 * Math.PI / 180,
+        // Every scalar the uniform struct declares must appear here: a missing
+        // one packs as undefined, which a Float32Array stores as NaN, and a NaN
+        // in the SDF makes every comparison false — the body silently ceases to
+        // exist and the shape tests below compare a flow against itself.
+        obstacleFocalRadius: 0,
+        airfoilThickness: 0.12,
         visualization: 0,
         pointerActive: false,
         pointerRadius: 0.08,
         velocityScale: 2,
         time: 0,
         pressureIterations: 30,
+        // Off by default: the dots are bright, and every brightness assertion
+        // in engine.spec.ts is about the dye. The tracer test overrides it.
+        tracersVisible: false,
       };
 
       let engine = null;

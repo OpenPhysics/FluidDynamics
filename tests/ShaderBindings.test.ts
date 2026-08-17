@@ -69,9 +69,18 @@ function declarations(source: string): Declaration[] {
     const [, group, binding, addressSpace, name, rawType] = match;
     const type = (rawType ?? "").trim();
 
+    const space = (addressSpace ?? "").trim();
+
     let spec: BindingSpec;
-    if ((addressSpace ?? "").trim() === "uniform") {
+    if (space === "uniform") {
       spec = { kind: "uniform" };
+    } else if (space.startsWith("storage")) {
+      // `var<storage, read_write>` or `var<storage, read>`; the access mode is
+      // optional in WGSL and defaults to read. It is checked because a buffer
+      // declared read_write against a read-only-storage layout entry is a
+      // pipeline-creation error, and a vertex stage may not have a writable one
+      // at all.
+      spec = { kind: "storageBuffer", access: space.includes("read_write") ? "read-write" : "read-only" };
     } else if (type === "sampler") {
       spec = { kind: "sampler" };
     } else {
@@ -143,6 +152,12 @@ describe("shader binding declarations", () => {
         if (declaration.spec.kind === "storageTexture" && entry.kind === "storageTexture") {
           expect(entry.format, `${file}: ${declaration.name} writes a different format than its layout declares`).toBe(
             declaration.spec.format,
+          );
+        }
+
+        if (declaration.spec.kind === "storageBuffer" && entry.kind === "storageBuffer") {
+          expect(entry.access, `${file}: ${declaration.name} asks for a different access than its layout grants`).toBe(
+            declaration.spec.access,
           );
         }
       }

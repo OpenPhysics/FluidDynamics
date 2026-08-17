@@ -46,6 +46,7 @@ function sampleValues(): FluidUniformValues {
     pointerRadius: 0.05,
     velocityScale: 3,
     time: 12.5,
+    tracerEmitBatch: 7,
   };
 }
 
@@ -122,7 +123,10 @@ describe("FluidUniforms layout", () => {
 
   it("leaves the tail round-up unwritten and zero", () => {
     const data = new FluidUniforms().pack(sampleValues(), new FluidGridSpec(256, 128));
-    const lastIndex = UNIFORM_OFFSETS.time + 1;
+    // Members are declared widest-first, so the highest offset is the last
+    // member and it is always a scalar. Derived rather than named, so adding a
+    // member does not leave this test checking the wrong slice.
+    const lastIndex = Math.max(...Object.values(UNIFORM_OFFSETS)) + 1;
     expect(Array.from(data.slice(lastIndex, UNIFORM_FLOAT_COUNT))).toEqual(
       new Array(UNIFORM_FLOAT_COUNT - lastIndex).fill(0),
     );
@@ -158,6 +162,7 @@ describe("FluidUniforms packing", () => {
     expect(data[UNIFORM_OFFSETS.visualization]).toBe(2);
     expect(data[UNIFORM_OFFSETS.velocityScale]).toBe(3);
     expect(data[UNIFORM_OFFSETS.time]).toBe(12.5);
+    expect(data[UNIFORM_OFFSETS.tracerEmitBatch]).toBe(7);
   });
 
   it("takes grid-derived values from the spec, not the caller", () => {

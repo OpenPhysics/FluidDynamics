@@ -13,8 +13,6 @@
  *  - Layout / chrome values are in screen pixels.
  *  - Colour strings live in FluidDynamicsColors.ts, not here.
  *  - Computed expressions (e.g. `2 * Math.PI`) may stay inline.
- *
- * Remove the example constants below and replace them with the sim's own.
  */
 
 import { Bounds2, Range, Vector2 } from "scenerystack/dot";
@@ -123,8 +121,16 @@ export const DIFFUSION_SWEEPS_MAX = 12;
 /**
  * Error the viscous solve is iterated down to, as a fraction of the error its
  * initial guess starts with. 10⁻³ is far below the point where a difference is
- * visible in the dye, and it is what makes the *displayed* viscosity the one the
- * fluid actually feels.
+ * visible in the dye, and across the great majority of the parameter space it is
+ * what makes the *displayed* viscosity the one the fluid actually feels.
+ *
+ * It is a target, not a guarantee: DIFFUSION_SWEEPS_MAX caps the iteration
+ * count, and in the stiffest corner — the ultra-fine grid at the top of the
+ * viscosity slider, α ≈ 1.7 × 10³, ω ≈ 1.966 — twelve sweeps leave roughly two
+ * thirds of the error rather than a thousandth of it. There the fluid is still
+ * somewhat less viscous than the readout claims, which biases the effective
+ * Reynolds number upward. That corner is creeping flow with nothing to see, so
+ * the cap is the right trade; it is not a corner where the tolerance holds.
  */
 export const DIFFUSION_RESIDUAL_TOLERANCE = 1e-3;
 
@@ -344,6 +350,76 @@ export const POINTER_RADIUS_M = 0.08;
 export const DYE_DISSIPATION_RANGE = new Range(0.1, 1);
 export const DYE_DISSIPATION_DEFAULT = 0.99;
 
+// ── Tracer dots ───────────────────────────────────────────────────────────────
+//
+// A rake of neutrally buoyant dots released at the inlet, carried by the flow
+// and retired when they leave the channel — the numerical version of dropping
+// leaves on a stream, and close kin to the hydrogen-bubble timelines of a real
+// flow-visualization lab. They show what dye cannot: where the fluid stagnates,
+// how much faster it goes round the body than through the wake, and which way
+// the recirculation bubble turns.
+//
+// The particles live in a GPU storage buffer; see common/gpu/shaders/tracerStep.wgsl.
+
+/**
+ * Dots in one released column, spread evenly across the channel height with a
+ * lane's worth of clearance from each wall (lane i sits at (i+1)/(N+1) of the
+ * height). Twenty-one puts a dot every ~4.5 cm, fine enough that the column
+ * reads as a line being deformed rather than as scattered points.
+ */
+export const TRACER_LANE_COUNT = 21;
+
+/**
+ * Columns the buffer holds. Slots are reused in order, so this is also how many
+ * columns may be in flight at once: at TRACER_COLUMN_SPACING_M apart they span
+ * 2.8 m, comfortably more than the 2 m channel, so a column's slot is not
+ * recycled until well after that column has left — including the stragglers
+ * that get caught in the wake and take far longer than the free stream to
+ * cross. Halve the spacing and this must double to hold that span.
+ */
+export const TRACER_BATCH_COUNT = 5;
+
+/** Particles in the buffer. One dot per lane per column. */
+export const TRACER_TOTAL_COUNT = TRACER_LANE_COUNT * TRACER_BATCH_COUNT;
+
+/**
+ * Distance the free stream travels between one released column and the next, in
+ * metres.
+ *
+ * Spacing the releases by distance rather than by time is what keeps the
+ * columns evenly spaced *in the channel* at every flow speed — which is the
+ * whole point of the picture. A fixed time interval would bunch them up at the
+ * bottom of the speed slider and string them out at the top.
+ *
+ * At 0.56 m three or four columns are in the channel at once. Closer than this
+ * and the columns read as a wall of dots that hides the field behind them;
+ * further apart and there are too few of them to compare one against the next.
+ */
+export const TRACER_COLUMN_SPACING_M = 0.56;
+
+/** Dot radius, in metres. ~5.6 px across once the field is drawn at its on-screen size. */
+export const TRACER_RADIUS_M = 0.008;
+
+/**
+ * Where a released dot starts, in metres from the left wall. Clear of the
+ * two-cell dye injection strip, so a dot is in freely advecting fluid from its
+ * first step rather than sitting in the Dirichlet boundary.
+ */
+export const TRACER_INLET_X_M = 0.02;
+
+/**
+ * How close to the right wall a dot may get before it is retired, in metres.
+ * A dot is parked rather than deleted — its slot is simply invisible until the
+ * release cycle comes back round to it.
+ */
+export const TRACER_EXIT_MARGIN_M = 0.01;
+
+/** Seconds a freshly released dot takes to fade up to full opacity, so it does not pop into view. */
+export const TRACER_FADE_IN_SECONDS = 0.15;
+
+/** Invocations per workgroup in the tracer advection kernel. One dimension: the buffer is a flat array. */
+export const TRACER_WORKGROUP_SIZE = 64;
+
 // ── Measurement tools (tape and ruler) ────────────────────────────────────────
 
 /**
@@ -488,6 +564,15 @@ FluidDynamicsNamespace.register("FluidDynamicsConstants", {
   POINTER_RADIUS_M,
   DYE_DISSIPATION_RANGE,
   DYE_DISSIPATION_DEFAULT,
+  TRACER_LANE_COUNT,
+  TRACER_BATCH_COUNT,
+  TRACER_TOTAL_COUNT,
+  TRACER_COLUMN_SPACING_M,
+  TRACER_RADIUS_M,
+  TRACER_INLET_X_M,
+  TRACER_EXIT_MARGIN_M,
+  TRACER_FADE_IN_SECONDS,
+  TRACER_WORKGROUP_SIZE,
   TAPE_BASE_DEFAULT,
   TAPE_TIP_DEFAULT,
   RULER_POSITION_DEFAULT,

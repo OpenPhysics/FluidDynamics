@@ -85,6 +85,16 @@ The dye is then injected at the inflow and advected by the finished velocity
 field, through the same MacCormack predictor–corrector, since the tracer's own
 numerical diffusion is what the learner actually sees.
 
+The optional tracer dots are the Lagrangian counterpart of that Eulerian dye:
+massless, neutrally buoyant marker particles carried by the same finished
+velocity field, integrated with a midpoint (RK2) step for the same reason the
+backtrace uses one. They have no effect on the flow. Being particles rather than
+a field, they suffer none of advection's numerical diffusion — a dot stays a dot
+however far it travels — but they inherit every error in the velocity field that
+carries them, and a dot that reaches the body is removed rather than allowed to
+creep along a surface where the discrete no-slip condition has already brought
+the velocity to zero.
+
 ### How hard the iterative solves are made to work
 
 Both the viscous solve and the pressure solve are stationary iterations stopped

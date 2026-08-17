@@ -132,6 +132,11 @@ export class FluidFieldNode extends CanvasNode {
 
     const deviceLostListener = (): void => {
       this.reasonProperty.value = "deviceLost";
+      // Disposed, not merely dropped: the engine's uncaptured-error handler is
+      // registered on the device, which outlives it, so letting go of the
+      // reference here would leak the engine rather than release it. Destroying
+      // resources on a lost device is explicitly a no-op, so this is safe.
+      this.engine?.dispose();
       this.engine = null;
     };
     deviceLostEmitter.addListener(deviceLostListener);
@@ -265,14 +270,22 @@ export class FluidFieldNode extends CanvasNode {
         this.reasonProperty.value = acquisition.reason;
         return;
       }
-      this.engine = new WebGPUFluidEngine(
-        this.gpuCanvas,
-        acquisition.device,
-        FluidGridSpec.forResolution(this.model.gridResolutionProperty.value),
-        () => {
-          this.reasonProperty.value = "noDevice";
-        },
-      );
+      try {
+        this.engine = new WebGPUFluidEngine(
+          this.gpuCanvas,
+          acquisition.device,
+          FluidGridSpec.forResolution(this.model.gridResolutionProperty.value),
+          () => {
+            this.reasonProperty.value = "noDevice";
+          },
+        );
+      } catch {
+        // The engine's constructor reports through onFailure() before it
+        // throws, so the learner already has the "not available" message and
+        // reasonProperty is already set. Catching keeps the throw from
+        // escaping as an unhandled promise rejection, which is noise rather
+        // than information.
+      }
     });
   }
 
@@ -301,6 +314,7 @@ export class FluidFieldNode extends CanvasNode {
       obstacleFocalRadius: model.obstacleFocalRadiusProperty.value,
       airfoilThickness: model.airfoilThicknessProperty.value,
       visualization: visualizationModeCode(model.visualizationModeProperty.value),
+      tracersVisible: model.tracersVisibleProperty.value,
       pointerActive: pointer !== null && !this.pointerDelta.equals(Vector2.ZERO),
       pointerRadius: POINTER_RADIUS_M,
       // The colour ramps saturate at a small multiple of the inflow speed, so

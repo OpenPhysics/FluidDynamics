@@ -210,9 +210,11 @@ is easy to do and indirect to diagnose.
 
 So the layouts are plain data in `bindLayouts.ts`, and `tests/ShaderBindings.test.ts`
 parses every `@group(0) @binding(n)` out of the WGSL and checks it against the
-layout that shader's pipelines are built with — index, kind, and storage format.
-The check is one-directional (shader ⊆ layout) because a shared layout may
-legitimately carry entries a given kernel does not use.
+layout that shader's pipelines are built with — index, kind, storage format, and
+for the tracer buffer the storage access mode, since a `read_write` declaration
+against a read-only entry is a pipeline error and a vertex stage may not have a
+writable one at all. The check is one-directional (shader ⊆ layout) because a
+shared layout may legitimately carry entries a given kernel does not use.
 
 Texture formats are chosen around filtering: velocity and dye are `rgba16float`
 because semi-Lagrangian advection wants hardware bilinear interpolation and
@@ -258,6 +260,58 @@ hit-tested.
 only creates a paragraph sibling when the paragraph content is non-empty, and the
 message is empty until a failure reason arrives. Without a primary sibling to
 fall back on, `getPlaceableSibling()` asserts and the sim fails to launch.
+
+## Tracer dots
+
+The dye shows what the flow *does*; the dots show *where a parcel of fluid
+goes*. They are the only thing on screen with an identity that persists between
+frames, which is what lets a learner follow one dot round the body, watch it
+stall at the nose, or see it caught in the recirculation bubble and carried
+backwards. Independent of the visualization picker rather than a fifth value of
+it: they are informative over all four fields.
+
+Everything about them stays on the GPU. `TRACER_TOTAL_COUNT` particles live in a
+storage buffer as `vec4(x, y, age, alive)` — position in metres, age in seconds,
+a 0/1 flag — advected by `tracerStep.wgsl` and drawn by `tracerDraw.wgsl`.
+Nothing is ever read back: a readback would stall the pipeline every frame, and
+no CPU-side code needs to know where a dot is.
+
+Three decisions are worth keeping:
+
+**Release is clocked by distance, not time.** `tracerSchedule.ts` accumulates
+`inflowSpeed × dt` and fires a column every `TRACER_COLUMN_SPACING_M`, so the
+columns stay evenly spaced *in the channel* across the whole speed slider. A
+fixed time interval bunches them into a crowd at 0.05 m/s and strings them into
+a scatter at 3 m/s, and the even spacing is exactly what makes one column's
+deformation legible against its neighbours. The clock is the engine's, not the
+view's — like `inflowRamp`, it is arithmetic with a unit test.
+
+**Nothing is allocated, compacted or freed.** A dot that leaves the channel, hits
+a wall or touches the body is *parked*: `alive` goes to zero and it waits,
+invisible, for its slot's turn to come round again. That is what bounds the
+lifetime of a dot trapped at the stagnation point without a free list, and it is
+why `TRACER_BATCH_COUNT × TRACER_COLUMN_SPACING_M` must exceed the channel
+width — a slot recycled too early yanks a visible dot back to the inlet. A
+zeroed buffer is a full set of parked dots, so a freshly created one needs no
+initialization pass, the same trick `reset()` plays with the field textures.
+
+**Retirement on contact with the body is load-bearing.** Velocity inside a solid
+cell is zero, so a dot that got in would stall there in plain sight, on top of a
+body it is supposed to be flowing past. `tracerStep.wgsl` therefore tests the
+baked obstacle mask after each advection step, which also covers the learner
+dragging the body over a dot.
+
+The draw is one extra `setPipeline` and `draw(6, N)` at the end of the display
+pass, with alpha blending so the antialiased rim of a dot melts into the field.
+Parked dots are still drawn — nothing on the CPU knows which those are — and
+collapse to a point outside clip space in the vertex shader. The particle
+buffer is bound to the vertex stage as **read-only** storage: writable storage
+is not allowed there, which is why the step and draw passes cannot share a bind
+group layout.
+
+`tracersVisible` is not a uniform. It gates the dispatch and the draw on the
+CPU, and switching it on clears the buffer, so the channel fills from the inlet
+rather than resuming a pattern frozen mid-flight.
 
 ## Measurement tools
 
@@ -305,6 +359,7 @@ throws during ParallelDOM teardown. It drains a `disposers` array instead.
 | `tests/FluidUniforms.test.ts` | the CPU/GPU struct layout contract |
 | `tests/ShaderBindings.test.ts` | the WGSL/bind-group-layout contract |
 | `tests/solverSchedule.test.ts` | the viscous solve's sweep count and relaxation factor |
+| `tests/tracerSchedule.test.ts` | the tracer release clock: spacing, slot cycling, paused steps |
 | `tests/FluidGridSpec.test.ts` | dispatch arithmetic, square cells, uv mapping |
 | `tests/FlowRegime.test.ts` | Reynolds thresholds and their boundaries |
 | `tests/FluidModel.test.ts` | derived Re, reset, reachable regimes, shader codes |
@@ -321,6 +376,13 @@ downstream, that every obstacle shape blocks the flow, that removing the obstacl
 leaves the channel uniform, that reset clears the field, that every visualization
 mode renders — and that the wake is steady below the shedding threshold and
 unsteady above it, which is the simulation's central claim.
+
+It is also the only place the tracer dots can be checked at all, since they exist
+solely as GPU state: two cases confirm that columns are released at the inlet and
+carried out of the far end, and that no dot is ever left stalled inside the body.
+Both find the dots by counting near-white pixels, which nothing else on screen
+produces. The harness leaves `tracersVisible` off by default so the dots do not
+perturb the brightness assertions the dye tests make.
 
 It needs a WebGPU adapter (`playwright.config.ts` passes
 `--enable-unsafe-webgpu --enable-features=Vulkan`) and skips without one.

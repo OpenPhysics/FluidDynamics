@@ -26,6 +26,8 @@ Read both before changing the solver or the Scenery ↔ WebGPU bridge.
 | `src/common/gpu/FluidUniforms.ts` | CPU mirror of that struct — **must** stay in step with it |
 | `src/common/gpu/bindLayouts.ts` | Bind group layouts as plain data, checked against the WGSL by a test |
 | `src/common/gpu/solverSchedule.ts` | How many sweeps the viscous solve needs, and at what ω |
+| `src/common/gpu/tracerSchedule.ts` | When the next column of tracer dots is released, and into which buffer slot |
+| `src/common/gpu/shaders/tracerStep.wgsl` | Advects the tracer dots; `tracerDraw.wgsl` draws them over the field |
 | `src/common/view/FluidFieldNode.ts` | The Scenery ↔ WebGPU bridge |
 | `src/common/view/FluidScreenView.ts` | Layout and wiring shared by both screens |
 | `src/common/view/fluidDescription.ts` | Live a11y description, shared by field and screen summaries |
@@ -62,6 +64,16 @@ it with `isSolidAt(obstacleTex, …)`. Only `display.wgsl` still evaluates the S
 because it needs sub-cell accuracy for the outline. Going back to the analytic
 call inside the pressure solve costs ~10⁸ transcendental-heavy evaluations a
 frame at the finest grid.
+
+**The tracer dots are never read back, and never freed.** They live in a GPU
+storage buffer as `vec4(x, y, age, alive)`; a dot that leaves the channel or
+touches the body is *parked* (`alive = 0`) and waits for its buffer slot's turn
+to come round, which is what bounds the lifetime of one stuck at the stagnation
+point without a free list. So `TRACER_BATCH_COUNT × TRACER_COLUMN_SPACING_M`
+must stay larger than the channel — recycle a slot too early and a visible dot
+snaps back to the inlet. The draw pass binds the buffer to the **vertex** stage
+as read-only storage; writable storage is illegal there, which is why the step
+and draw passes have separate layouts.
 
 **Load shaders with `?raw`, never `fetch()`.** The `inlineSingleFile()` plugin
 requires no runtime file fetches, and the PWA's `globPatterns` does not include
@@ -117,6 +129,7 @@ Fleet-standard Vitest layout under root `tests/`, plus a Playwright suite:
 | `tests/FluidUniforms.test.ts` | CPU/GPU struct layout contract |
 | `tests/ShaderBindings.test.ts` | WGSL `@binding` ↔ bind-group-layout contract |
 | `tests/solverSchedule.test.ts` | Viscous solve sweep count and relaxation factor |
+| `tests/tracerSchedule.test.ts` | Tracer release spacing, slot cycling, paused steps |
 | `tests/FluidGridSpec.test.ts` | Dispatch arithmetic, square cells, uv mapping |
 | `tests/FlowRegime.test.ts` | Reynolds thresholds and boundaries |
 | `tests/FluidModel.test.ts` | Derived Re, reset, reachable regimes, shader codes |

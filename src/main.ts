@@ -68,13 +68,10 @@ onReadyToLaunch(() => {
       },
     }),
 
-    // Optional: fill in credits shown in Help → About
-    credits: {
-      leadDesign: "",
-      softwareDevelopment: "",
-      team: "",
-      qualityAssurance: "",
-    },
+    // No `credits`: joist skips each field it finds empty, so the four blank
+    // strings this used to carry were dead config. Attribution and the papers
+    // the solver implements live in CREDITS.md; add a `credits` object here if
+    // and when there are names to put in it.
   });
 
   sim.start();

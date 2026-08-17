@@ -111,13 +111,29 @@ export class FluidModel {
   public readonly visualizationModeProperty: Property<VisualizationMode>;
 
   /**
+   * Whether the tracer dots are released at the inlet.
+   *
+   * Independent of the visualization mode rather than one of its values: the
+   * dots mark parcels of fluid, so they are informative over any of the four
+   * fields, and a learner watching the vorticity map should not have to give it
+   * up to see where the fluid actually goes.
+   */
+  public readonly tracersVisibleProperty: BooleanProperty;
+
+  /**
    * Solver grid resolution. Preference-backed like vorticityProperty: the value
    * is owned by Preferences → Simulation and pushed here by
    * {@link attachGridResolution}, so Reset All does not touch it.
    */
   public readonly gridResolutionProperty: Property<GridResolution>;
 
-  /** Jacobi iterations in the pressure projection. */
+  /**
+   * Red-black SOR sweeps in the pressure projection.
+   *
+   * Preference-backed like vorticityProperty: the value is owned by
+   * Preferences → Simulation and pushed here by {@link attachSolverQuality}, so
+   * Reset All does not touch it.
+   */
   public readonly pressureIterationsProperty: NumberProperty;
 
   // ── Measurement tools ──────────────────────────────────────────────────────
@@ -198,6 +214,8 @@ export class FluidModel {
     this.dyeDissipationProperty = new NumberProperty(DYE_DISSIPATION_DEFAULT, { range: DYE_DISSIPATION_RANGE });
 
     this.visualizationModeProperty = new Property<VisualizationMode>("dye");
+
+    this.tracersVisibleProperty = new BooleanProperty(false);
 
     this.gridResolutionProperty = new Property<GridResolution>("standard");
 
@@ -317,11 +335,14 @@ export class FluidModel {
     this.angleOfAttackProperty.reset();
     this.obstacleFocalRadiusProperty.reset();
     this.airfoilThicknessProperty.reset();
-    // vorticityProperty, dyeDissipationProperty and gridResolutionProperty are
-    // deliberately not reset: they mirror Preferences → Simulation, which Reset
-    // All does not touch.
+    // vorticityProperty, dyeDissipationProperty, gridResolutionProperty and
+    // pressureIterationsProperty are deliberately not reset: they mirror
+    // Preferences → Simulation, which Reset All does not touch. Resetting one
+    // of them does not merely lose the value — the preference's link fires only
+    // on change, so nothing ever puts it back, and the toggle would go on
+    // reading "on" over a solver that had quietly dropped to the default.
     this.visualizationModeProperty.reset();
-    this.pressureIterationsProperty.reset();
+    this.tracersVisibleProperty.reset();
     this.rulerPositionProperty.reset();
     this.rulerVisibleProperty.reset();
     this.tapeTipPositionProperty.reset();
@@ -357,6 +378,7 @@ export class FluidModel {
     this.reynoldsNumberProperty.dispose();
     this.pressureIterationsProperty.dispose();
     this.gridResolutionProperty.dispose();
+    this.tracersVisibleProperty.dispose();
     this.visualizationModeProperty.dispose();
     this.dyeDissipationProperty.dispose();
     this.vorticityProperty.dispose();

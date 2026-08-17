@@ -6,8 +6,8 @@
 // The SimUniforms struct below is the contract with FluidUniforms.ts: member
 // order here and the float offsets there must agree, and a unit test asserts it.
 // Fields are grouped by alignment (vec4 first, then vec2, then f32) so no member
-// needs implicit padding. The members occupy 140 bytes; the struct's own
-// alignment rounds that up to 144, which is the uniform buffer's size.
+// needs implicit padding. The members occupy 144 bytes, which is both a multiple
+// of the struct's own 16-byte alignment and the uniform buffer's size.
 
 struct SimUniforms {
   // Dye injected at the inflow, in alternating bands. Two colors rather than one
@@ -54,6 +54,9 @@ struct SimUniforms {
   // Elapsed simulation time in seconds. Used only to make the inflow
   // perturbation in forces.wgsl vary, which is what seeds vortex shedding.
   time           : f32,
+  // Which column of tracer dots is released at the inlet this step, or -1 for
+  // none. Decided on the CPU by tracerSchedule.ts; read only by tracerStep.wgsl.
+  tracerEmitBatch : f32,
 }
 
 // ── Coordinate helpers ────────────────────────────────────────────────────────

@@ -23,6 +23,10 @@
  * Vortex detail, dye fade and grid resolution used to live here; all three are
  * display/quality knobs rather than physics controls, so they were promoted to
  * Preferences → Simulation (see FluidDynamicsPreferencesNode).
+ *
+ * The tracer-dot checkbox is a checkbox rather than a fifth entry in the "Show"
+ * picker because it is additive: the dots mark parcels of fluid, and they are
+ * worth having over any of the four fields rather than instead of one.
  */
 
 import { DerivedProperty, type NumberProperty, type Property, type TReadOnlyProperty } from "scenerystack/axon";
@@ -31,7 +35,7 @@ import { optionize } from "scenerystack/phet-core";
 import { StringUtils } from "scenerystack/phetcommon";
 import { HBox, type Node, Text, VBox } from "scenerystack/scenery";
 import { PhetFont } from "scenerystack/scenery-phet";
-import { ComboBox, HSlider } from "scenerystack/sun";
+import { Checkbox, ComboBox, HSlider } from "scenerystack/sun";
 import FluidDynamicsColors from "../../FluidDynamicsColors.js";
 import {
   CONTROL_LABEL_FONT_SIZE,
@@ -149,6 +153,30 @@ export class FluidControlPanel extends FluidDynamicsPanel {
         disposers.push(box.dispose);
       }
     }
+
+    // Both screens: the dots are the one control here that shows *where the
+    // fluid goes* rather than what it is doing, and that is as much the Intro
+    // screen's question as the Lab's.
+    const tracerLabel = new Text(strings.controls.tracersStringProperty, {
+      font: new PhetFont(CONTROL_LABEL_FONT_SIZE),
+      fill: FluidDynamicsColors.textColorProperty,
+      maxWidth: CONTROL_PANEL_WIDTH * 0.75,
+    });
+    const tracerCheckbox = new Checkbox(model.tracersVisibleProperty, tracerLabel, {
+      // The panel is a dark surface, so the box takes the panel's own text
+      // colour rather than the light-surface fill the combo-box list uses.
+      checkboxColor: FluidDynamicsColors.textColorProperty,
+      checkboxColorBackground: FluidDynamicsColors.panelBackgroundColorProperty,
+      spacing: 8,
+      accessibleName: a11y.tracersStringProperty,
+      accessibleHelpText: a11y.tracersHelpTextStringProperty,
+    });
+    children.push(tracerCheckbox);
+    controls.push(tracerCheckbox);
+    disposers.push(() => {
+      tracerCheckbox.dispose();
+      tracerLabel.dispose();
+    });
 
     super(new VBox({ children, spacing: 12, align: "left", stretch: true }), options);
 

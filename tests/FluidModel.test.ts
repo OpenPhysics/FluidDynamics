@@ -2,7 +2,7 @@
  * Tests for the shared flow-parameter model.
  */
 
-import { NumberProperty, Property } from "scenerystack/axon";
+import { BooleanProperty, NumberProperty, Property } from "scenerystack/axon";
 import { Vector2 } from "scenerystack/dot";
 import { describe, expect, it } from "vitest";
 import type { GridResolution } from "../src/common/gpu/FluidGridSpec.js";
@@ -23,6 +23,8 @@ import {
   OBSTACLE_DRAG_BOUNDS_M,
   OBSTACLE_FOCAL_MAX_FRACTION,
   obstacleDragBounds,
+  PRESSURE_ITERATIONS_DEFAULT,
+  PRESSURE_ITERATIONS_HIGH,
   RULER_POSITION_DEFAULT,
   TAPE_BASE_DEFAULT,
   TAPE_TIP_DEFAULT,
@@ -133,6 +135,7 @@ describe("FluidModel", () => {
     model.vorticityProperty.value = 5;
     model.dyeDissipationProperty.value = 0.2;
     model.visualizationModeProperty.value = "vorticity";
+    model.tracersVisibleProperty.value = true;
     model.gridResolutionProperty.value = "fine";
     model.pressureIterationsProperty.value = 50;
     model.measuringTapeVisibleProperty.value = true;
@@ -149,6 +152,7 @@ describe("FluidModel", () => {
     expect(model.obstacleShapeProperty.value).toBe("cylinder");
     expect(model.angleOfAttackProperty.value).toBe(ANGLE_OF_ATTACK_DEFAULT);
     expect(model.visualizationModeProperty.value).toBe("dye");
+    expect(model.tracersVisibleProperty.value, "reset stops releasing tracer dots").toBe(false);
     expect(model.reynoldsNumberProperty.value).toBeCloseTo(initialRe, 12);
     expect(model.measuringTapeVisibleProperty.value, "reset puts the tape back in the toolbox").toBe(false);
     expect(model.tapeBasePositionProperty.value.equals(TAPE_BASE_DEFAULT)).toBe(true);
@@ -161,8 +165,38 @@ describe("FluidModel", () => {
     expect(model.vorticityProperty.value, "vortex detail is a preference and survives reset").toBe(5);
     expect(model.dyeDissipationProperty.value, "dye fade is a preference and survives reset").toBe(0.2);
     expect(model.gridResolutionProperty.value, "grid resolution is a preference and survives reset").toBe("fine");
+    expect(model.pressureIterationsProperty.value, "solver accuracy is a preference and survives reset").toBe(50);
 
     model.dispose();
+  });
+
+  it("keeps the solver-accuracy preference across a reset", () => {
+    // Regression: pressureIterationsProperty mirrors Preferences → Simulation
+    // exactly as the three above do, but was being reset with the experiment
+    // state. Because the preference's link only fires on change, nothing put it
+    // back, so Reset All silently dropped a learner who had turned "higher
+    // solver accuracy" on back to the default sweep count.
+    const model = new FluidModel();
+    const highQualityPreference = new BooleanProperty(false);
+    model.attachSolverQuality(highQualityPreference);
+
+    expect(model.pressureIterationsProperty.value).toBe(PRESSURE_ITERATIONS_DEFAULT);
+
+    highQualityPreference.value = true;
+    expect(model.pressureIterationsProperty.value).toBe(PRESSURE_ITERATIONS_HIGH);
+
+    model.reset();
+    expect(
+      model.pressureIterationsProperty.value,
+      "the preference is still on, so the solver must still be running at its sweep count",
+    ).toBe(PRESSURE_ITERATIONS_HIGH);
+
+    // And the mirror still tracks the preference afterwards.
+    highQualityPreference.value = false;
+    expect(model.pressureIterationsProperty.value).toBe(PRESSURE_ITERATIONS_DEFAULT);
+
+    model.dispose();
+    highQualityPreference.dispose();
   });
 
   it("mirrors the vorticity, dye-fade and grid-resolution preferences once attached", () => {
