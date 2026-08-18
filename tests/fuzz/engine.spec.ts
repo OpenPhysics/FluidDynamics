@@ -646,7 +646,13 @@ test.describe("WebGPU fluid engine", () => {
     const withoutDots = await render(page, format, 120, { inflowSpeed: 1, obstacleShape: 0 });
     expect(withoutDots.countBrighterThan(TRACER_BRIGHTNESS), "the field alone has no near-white pixels").toBe(0);
 
-    const upstream = (u: number): boolean => u < 0.3;
+    // u < 0.45, not 0.3: a freshly released column takes 0.15 s to fade up to
+    // TRACER_BRIGHTNESS, and at 1 m/s the previous column has by then crossed
+    // u = 0.3 (columns are 0.56 m apart, 0.28 of the channel). A tight inlet
+    // band therefore reads as "stopped releasing" whenever we sample during
+    // that fade-in, which the 210-frame checkpoint does. 0.45 is still the
+    // first half of the channel, well short of the downstream check.
+    const upstream = (u: number): boolean => u < 0.45;
     const downstream = (u: number): boolean => u > 0.6;
 
     // Half a second in, the columns released so far are still in the upstream
