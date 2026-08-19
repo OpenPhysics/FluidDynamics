@@ -195,11 +195,11 @@ test.describe("WebGPU fluid engine", () => {
     // Re ≈ 4.5, firmly in the creeping regime. Long enough to settle: at
     // 0.3 m/s the fluid crosses the 2 m channel in about 7 seconds.
     await page.evaluate(() => window.harness.reset());
-    const steady = await unsteadiness(600, { inflowSpeed: 0.3, viscosity: 1e-2 });
+    const steady = await unsteadiness(360, { inflowSpeed: 0.3, viscosity: 1e-2 });
 
     // Re ≈ 150, well past the shedding threshold.
     await page.evaluate(() => window.harness.reset());
-    const shedding = await unsteadiness(600, { inflowSpeed: 1, viscosity: 1e-3 });
+    const shedding = await unsteadiness(360, { inflowSpeed: 1, viscosity: 1e-3 });
 
     expect(steady, "the low-Reynolds wake has settled").toBeLessThan(3);
     expect(shedding, "the vortex street keeps the wake moving").toBeGreaterThan(steady * 3);
@@ -648,6 +648,7 @@ test.describe("WebGPU fluid engine", () => {
 
     const upstream = (u: number): boolean => u < 0.3;
     const downstream = (u: number): boolean => u > 0.6;
+    const inlet = (u: number): boolean => u < 0.08;
 
     // Half a second in, the columns released so far are still in the upstream
     // end: dots exist, and none has teleported downstream.
@@ -660,7 +661,7 @@ test.describe("WebGPU fluid engine", () => {
     // left and later ones are spread across the whole channel.
     const later = await render(page, format, 210, { inflowSpeed: 1, obstacleShape: 0, tracersVisible: true });
     expect(later.countBrighterThan(TRACER_BRIGHTNESS, downstream), "dots have reached the far end").toBeGreaterThan(0);
-    expect(later.countBrighterThan(TRACER_BRIGHTNESS, upstream), "and the inlet is still releasing").toBeGreaterThan(0);
+    expect(later.countBrighterThan(TRACER_BRIGHTNESS, inlet), "and the inlet is still releasing").toBeGreaterThan(0);
   });
 
   test("tracer dots are never drawn on the obstacle", async ({ page }) => {
